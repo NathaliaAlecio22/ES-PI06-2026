@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build outputs and caches
+dist/
+build/
+coverage/
+.cache/
+.turbo/
+*.tsbuildinfo
+
+# Hardhat and Solidity
+artifacts/
+cache/
+typechain-types/
+deployments/localhost/
+
+# Frontend tooling
+.vite/
+.next/
+out/
+
+# Logs and runtime files
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.pid
+
+# Test and local blockchain state
+.nyc_output/
+.hardhat_node/
+
+# Database volumes and local uploads
+.postgres-data/
+uploads/
+
+# Editors and operating systems
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.swp
+*.swo
+*~
