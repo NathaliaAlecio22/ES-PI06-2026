@@ -1,6 +1,13 @@
 import express, { Request, Response } from "express";
+
+import {
+  createBatchRequestSchema,
+  createWorkflowRequestSchema,
+  participantSchema,
+  transferRequestSchema,
+} from "@provenance/shared";
+
 import { batches, createId, workflows } from "./store";
-import { batchSchema, participantSchema, transferSchema, workflowSchema } from "./schemas";
 
 export const app = express();
 app.use(express.json());
@@ -14,7 +21,7 @@ app.get("/api/health", (_request, response) => {
 });
 
 app.post("/api/workflows", (request, response) => {
-  const parsed = workflowSchema.safeParse(request.body);
+  const parsed = createWorkflowRequestSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({ error: "Dados do workflow inválidos", details: parsed.error.issues });
     return;
@@ -57,7 +64,7 @@ app.post("/api/workflows/:workflowId/participants", (request, response) => {
 });
 
 app.post("/api/batches", (request, response) => {
-  const parsed = batchSchema.safeParse(request.body);
+  const parsed = createBatchRequestSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({ error: "Dados do lote inválidos", details: parsed.error.issues });
     return;
@@ -90,7 +97,7 @@ app.post("/api/batches/:batchId/transfers", (request, response) => {
     return;
   }
 
-  const parsed = transferSchema.safeParse(request.body);
+  const parsed = transferRequestSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({ error: "Dados da transferência inválidos", details: parsed.error.issues });
     return;
