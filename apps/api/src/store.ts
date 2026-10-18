@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { Batch, Workflow } from "./types";
+
+import type { Batch, Workflow } from "@provenance/shared";
 
 export const workflows = new Map<string, Workflow>();
 export const batches = new Map<string, Batch>();

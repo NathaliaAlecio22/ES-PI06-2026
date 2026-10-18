@@ -10,7 +10,7 @@ const environmentSchema = z.object({
   CHAIN_ID: z.coerce.number().int().positive(),
   WORKFLOW_FACTORY_ADDRESS: z.string().optional(),
   TRANSACTION_SIGNER_PRIVATE_KEY: z.string().optional(),
-  SESSION_SECRET: z.string().optional()
+  SESSION_SECRET: z.string().optional(),
 });
 
 export const env = environmentSchema.parse(process.env);
