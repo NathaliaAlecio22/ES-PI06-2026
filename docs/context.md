@@ -55,7 +55,7 @@ The chain guarantees a recorded reading can't be silently altered after the fact
 - The **ABI**, auto-generated at compile time from the Solidity source, describes each function's name/parameter/return types. `ethers.js` uses the ABI to encode calls into the raw bytes the RPC layer expects, and to decode responses.
 - Writes (state-changing calls) require a signed transaction, gas, and wait for block inclusion; a receipt is returned with success/revert status, gas used, and any emitted event logs.
 - Reads (`view`/`pure` functions) are synchronous `eth_call`s with no gas cost and no transaction — used for e.g. "get current custody chain for batch X."
-- Contract should emit events (e.g. `CustodyTransferred(batchId, from, to, timestamp)`, `ParticipantRegistered(...)`, `ConditionBreached(...)`) — these are what the indexer service listens for; do not rely on polling contract storage directly for history.
+- Contract should emit events (e.g. `CustodyTransferred(batchId, from, to, timestamp)`, `ParticipantRegistered(...)`, `ConditionReported(...)`) — these are what the indexer service listens for; do not rely on polling contract storage directly for history.
 
 ## 6. Deployed services (target architecture)
 

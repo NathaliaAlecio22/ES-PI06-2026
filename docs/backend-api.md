@@ -21,12 +21,14 @@ apps/api/
   src/
     app.ts       # Configuração da aplicação e rotas
     server.ts    # Inicialização do servidor HTTP
-    schemas.ts   # Schemas de validação das requisições
     store.ts     # Armazenamento temporário em memória
-    types.ts     # Tipos do domínio
   tests/
     app.test.ts  # Testes dos endpoints principais
 ```
+
+Os DTOs (schemas Zod + tipos inferidos de cada requisição/resposta) não vivem mais aqui: são
+definidos uma única vez em [`packages/shared`](../packages/shared/README.md)
+(`@provenance/shared`) e importados pela API, pelo frontend e pelo simulador de sensores.
 
 ## Endpoints implementados
 
@@ -42,15 +44,20 @@ apps/api/
 
 ## Exemplo de workflow
 
+Os campos seguem os schemas de `@provenance/shared`: `requiredRole` é um dos papéis fixos do
+contrato de definição de workflow (`manufacturer`, `distributor`, `carrier`,
+`distribution_center`, `retailer`, `admin` — espelhando o enum on-chain), e hashes são
+`bytes32` hex com prefixo `0x` porque são eles que chegam à blockchain.
+
 ```json
 {
   "name": "Cadeia de custódia",
-  "adminAddress": "0xadmin",
+  "adminAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "steps": [
     {
       "name": "Origem",
-      "requiredRole": "producer",
-      "specificationHash": "hash-1"
+      "requiredRole": "manufacturer",
+      "specificationHash": "0xbb459defbb15fa55f2506b3ab87d778d07e82b5bc3569d1711c27229c7b0b929"
     }
   ]
 }
@@ -81,12 +88,40 @@ npm test
 npm run build
 ```
 
+## Ambiente Hardhat (para a futura integração com contratos)
+
+`src/blockchain.ts` já implementa toda a camada de comunicação com os contratos
+`WorkflowFactory`/`Workflow` (docs/context.md §3, §5, §7) via `ethers.js`, mas as rotas em
+`app.ts` ainda usam apenas o armazenamento em memória — a integração (item 3 abaixo) ainda não
+foi ligada aos endpoints. O workspace Hardhat em [`contracts/`](../contracts/README.md) já
+existe e compila/testa normalmente, e `apps/api/.env.example` já aponta `RPC_URL`/`CHAIN_ID`
+para um nó Hardhat local (`http://127.0.0.1:8545`, chainId `31337`).
+
+Para preparar um ambiente local ponta a ponta:
+
+```powershell
+cd contracts
+npm install
+npm run node            # terminal dedicado; mantém um nó local rodando
+npm run deploy:local     # em outro terminal; imprime o endereço do WorkflowFactory
+```
+
+Copie o endereço impresso para `WORKFLOW_FACTORY_ADDRESS` em `apps/api/.env`, e
+`TRANSACTION_SIGNER_PRIVATE_KEY` para uma das chaves privadas que `npm run node` lista ao
+iniciar (qualquer uma serve — todas já têm ETH de teste nessa rede local). A partir daí, todas
+as funções de `src/blockchain.ts` (criação de workflow, registro de participante, criação de
+lote, transferência de custódia com assinatura, leitura de condição) podem ser exercitadas
+contra contratos reais.
+
 ## Regras atuais
 
 - Workflows precisam ter pelo menos uma etapa.
 - Um lote só pode ser criado para um workflow existente.
 - Uma transferência deve informar o custodiante atual do lote.
 - A etapa informada na transferência deve ser a etapa atual do lote.
+- Endereços Ethereum, hashes `bytes32` e assinaturas (65 bytes hex) são validados pelos
+  schemas de `@provenance/shared` no formato exigido pela blockchain; dados fora do formato
+  são rejeitados com resposta HTTP `400`.
 - Dados inválidos são rejeitados com resposta HTTP `400`.
 - Recursos inexistentes retornam HTTP `404`.
 - Transferências incompatíveis com o estado atual retornam HTTP `409`.
