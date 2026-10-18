@@ -30,6 +30,7 @@ The API starts on port `3000` by default. Use `npm test` to run the HTTP tests a
 - TypeScript
 - Express
 - ethers
+- `@provenance/shared` (DTOs e schemas Zod compartilhados — [`packages/shared`](../../packages/shared/README.md))
 - PostgreSQL (`pg`)
 - Zod for runtime boundary validation
 
@@ -54,11 +55,12 @@ The boilerplate exposes `GET /health` for process and container health checks.
 
 ## Docker
 
-Build from this directory so `.dockerignore` applies:
+O contexto de build é a raiz do repositório (a imagem inclui `packages/shared`, de onde vêm os
+DTOs):
 
 ```bash
-docker build -t provenance-api .
-docker run --rm -p 3000:3000 --env-file .env provenance-api
+docker build -f apps/api/Dockerfile -t provenance-api .
+docker run --rm -p 3000:3000 --env-file apps/api/.env provenance-api
 ```
 
 The final image contains production dependencies and compiled JavaScript only, and runs as a non-root user.
