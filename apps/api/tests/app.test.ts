@@ -93,4 +93,18 @@ describe("Provenance API", () => {
     expect(history.body.transfers).toHaveLength(1);
     expect(history.body.transfers[0].to).toBe(CARRIER_ADDRESS);
   });
+
+  it("exposes uint256 ids as decimal strings and rejects malformed/unknown ids", async () => {
+    const workflow = await request(app).post("/api/workflows").send(workflowPayload());
+
+    // JSON has no bigint: ids travel as decimal strings (see app.ts's json replacer).
+    expect(typeof workflow.body.id).toBe("string");
+    expect(workflow.body.id).toMatch(/^\d+$/);
+
+    const malformed = await request(app).get("/api/workflows/0xdeadbeef");
+    expect(malformed.status).toBe(400);
+
+    const unknown = await request(app).get(`/api/workflows/${"9".repeat(77)}`);
+    expect(unknown.status).toBe(404);
+  });
 });

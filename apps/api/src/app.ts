@@ -5,6 +5,8 @@ import {
   createWorkflowRequestSchema,
   participantSchema,
   transferRequestSchema,
+  type Batch,
+  type Workflow,
 } from "@provenance/shared";
 
 import { batches, createId, workflows } from "./store";
@@ -12,8 +14,49 @@ import { batches, createId, workflows } from "./store";
 export const app = express();
 app.use(express.json());
 
+// JSON has no bigint type: uint256-shaped ids are serialized as decimal strings on every
+// response (numbers would lose precision above Number.MAX_SAFE_INTEGER). `res.json` applies
+// this replacer to every route below; the shared schemas coerce the strings back.
+app.set(
+  "json replacer",
+  (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value),
+);
+
 function notFound(response: Response): void {
   response.status(404).json({ error: "Recurso não encontrado" });
+}
+
+/** Route params carry ids as decimal strings (the JSON representation); malformed ones are client errors. */
+function parseChainId(raw: unknown): bigint | undefined {
+  return typeof raw === "string" && /^\d+$/.test(raw) ? BigInt(raw) : undefined;
+}
+
+/** Resolves `:workflowId`, replying 400/404 and returning undefined when invalid/unknown. */
+function resolveWorkflow(request: Request, response: Response): Workflow | undefined {
+  const id = parseChainId(request.params.workflowId);
+  if (id === undefined) {
+    response.status(400).json({ error: "Id de workflow inválido" });
+    return undefined;
+  }
+  const workflow = workflows.get(id);
+  if (!workflow) {
+    notFound(response);
+  }
+  return workflow;
+}
+
+/** Resolves `:batchId`, replying 400/404 and returning undefined when invalid/unknown. */
+function resolveBatch(request: Request, response: Response): Batch | undefined {
+  const id = parseChainId(request.params.batchId);
+  if (id === undefined) {
+    response.status(400).json({ error: "Id de lote inválido" });
+    return undefined;
+  }
+  const batch = batches.get(id);
+  if (!batch) {
+    notFound(response);
+  }
+  return batch;
 }
 
 app.get("/api/health", (_request, response) => {
@@ -38,18 +81,16 @@ app.post("/api/workflows", (request, response) => {
 });
 
 app.get("/api/workflows/:workflowId", (request, response) => {
-  const workflow = workflows.get(request.params.workflowId);
+  const workflow = resolveWorkflow(request, response);
   if (!workflow) {
-    notFound(response);
     return;
   }
   response.json(workflow);
 });
 
 app.post("/api/workflows/:workflowId/participants", (request, response) => {
-  const workflow = workflows.get(request.params.workflowId);
+  const workflow = resolveWorkflow(request, response);
   if (!workflow) {
-    notFound(response);
     return;
   }
 
@@ -87,9 +128,8 @@ app.post("/api/batches", (request, response) => {
 });
 
 app.post("/api/batches/:batchId/transfers", (request, response) => {
-  const batch = batches.get(request.params.batchId);
+  const batch = resolveBatch(request, response);
   if (!batch) {
-    notFound(response);
     return;
   }
   if (batch.status !== "ACTIVE") {
@@ -115,9 +155,8 @@ app.post("/api/batches/:batchId/transfers", (request, response) => {
 });
 
 app.get("/api/batches/:batchId/history", (request, response) => {
-  const batch = batches.get(request.params.batchId);
+  const batch = resolveBatch(request, response);
   if (!batch) {
-    notFound(response);
     return;
   }
   response.json({ batchId: batch.id, status: batch.status, transfers: batch.transfers });
