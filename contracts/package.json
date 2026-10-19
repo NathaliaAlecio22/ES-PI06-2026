@@ -6,7 +6,8 @@
   "description": "WorkflowFactory + per-enterprise Workflow contracts for the provenance platform (docs/context.md §3, §5, §7).",
   "scripts": {
     "compile": "hardhat compile",
-    "build": "hardhat build",
+    "build": "hardhat build && npm run gen:abis",
+    "gen:abis": "node scripts/generate-abis.mjs",
     "test": "hardhat test",
     "test:solidity": "hardhat test solidity",
     "test:mocha": "hardhat test mocha",
