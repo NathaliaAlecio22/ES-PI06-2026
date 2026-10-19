@@ -16,6 +16,14 @@ import { bytes32Schema, evmAddressSchema, signatureSchema } from "./primitives.j
 // Shared response fragments
 // -------------------------------------------------------------------------------------------
 
+/**
+ * On-chain-shaped uint256 id (workflowId/batchId). JSON has no bigint type and these ids
+ * exceed `Number.MAX_SAFE_INTEGER`, so over the wire they travel as decimal strings;
+ * `coerce` accepts that string (or a number) and hands the rest of the code a real bigint,
+ * keeping `z.infer` identical on both sides of the boundary.
+ */
+const uint256IdSchema = z.coerce.bigint();
+
 /** Participant registration */
 export const participantSchema = z.object({
   address: evmAddressSchema,
@@ -39,7 +47,7 @@ export type CreateWorkflowRequest = z.infer<typeof createWorkflowRequestSchema>;
 
 /** Response of `POST /api/workflows` and `GET /api/workflows/:workflowId`. */
 export const workflowResponseSchema = z.object({
-  id: z.uuid(),
+  id: uint256IdSchema,
   name: z.string().min(1),
   adminAddress: evmAddressSchema,
   steps: z.array(stepSchema),
@@ -55,7 +63,7 @@ export type Workflow = z.infer<typeof workflowResponseSchema>;
 
 /** One custody transfer as returned by the batch endpoints. */
 export const transferResponseSchema = z.object({
-  id: z.uuid(),
+  id: uint256IdSchema,
   from: evmAddressSchema,
   to: evmAddressSchema,
   stepIndex: z.number().int().min(0),
@@ -89,7 +97,7 @@ export type TransferRequest = z.infer<typeof transferRequestSchema>;
 
 /** `POST /api/batches` */
 export const createBatchRequestSchema = z.object({
-  workflowId: z.uuid(),
+  workflowId: uint256IdSchema,
   currentCustodian: evmAddressSchema,
 });
 
@@ -97,8 +105,8 @@ export type CreateBatchRequest = z.infer<typeof createBatchRequestSchema>;
 
 /** Response of `POST /api/batches`. */
 export const batchResponseSchema = z.object({
-  id: z.uuid(),
-  workflowId: z.uuid(),
+  id: uint256IdSchema,
+  workflowId: uint256IdSchema,
   currentCustodian: evmAddressSchema,
   currentStepIndex: z.number().int().min(0),
   status: batchStatusSchema,
@@ -110,7 +118,7 @@ export type Batch = z.infer<typeof batchResponseSchema>;
 
 /** Response of `GET /api/batches/:batchId/history`. */
 export const batchHistoryResponseSchema = z.object({
-  batchId: z.uuid(),
+  batchId: uint256IdSchema,
   status: batchStatusSchema,
   transfers: z.array(transferResponseSchema),
 });
