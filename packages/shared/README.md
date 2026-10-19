@@ -10,6 +10,7 @@ src/
   primitives.ts   # EVM value formats: address, bytes32, signature
   domain.ts       # Role, BatchStatus, Step — the workflow-definition contract
   api.ts          # request/response schemas for every endpoint
+  abis.ts         # AUTO-GENERATED contract ABIs (see below) — do not edit
   index.ts        # public entry point
 ```
 The role ids (`ROLES`) and their on-chain numeric values (`ROLE_CHAIN_IDS`) mirror
@@ -39,14 +40,23 @@ import { createWorkflowRequestSchema, type Workflow } from "@provenance/shared";
 npm creates a junction/symlink under the consumer's `node_modules`, so after editing this
 package run `npm run build` here and restart the consumer's dev server. `apps/api` already follows this exact pattern.
 
-## Blockchain ABI artifacts — deliberately not here (yet)
+## Blockchain ABI artifacts (`src/abis.ts`)
 
-Per the original scoping note and FLAG #1 in [`apps/api/src/blockchain.ts`](../../apps/api/src/blockchain.ts),
-generated ABI artifacts should have **one documented generation and consumption path**. The
-plan, once the contract team settles the Solidity sources: a small generator script (run
-after `hardhat build` in `contracts/`) that extracts the compiler artifacts' ABIs into a
-generated module here, and `blockchain.ts` imports them instead of its current hand-authored
-copies. Do not paste raw ABI JSON by hand into this package in the meantime.
+`src/abis.ts` is **auto-generated**: [`contracts/scripts/generate-abis.mjs`](../../contracts/scripts/generate-abis.mjs)
+extracts the ABIs of `Workflow` and `WorkflowFactory` from the Hardhat build artifacts
+(`contracts/artifacts/`, produced by the Solidity compiler) and writes them here as ethers
+human-readable signature strings. The generator runs automatically as part of
+`npm run build` in `contracts/` (or directly via `npm run gen:abis` there), and the
+regenerated file is committed — consumers never need the Solidity toolchain to build.
+
+This resolves the original FLAG #1 in `apps/api/src/blockchain.ts`: the ABIs there used to
+be hand-authored mirrors of the Solidity sources with nothing keeping them in sync.
+`blockchain.ts` now imports `WORKFLOW_ABI`/`WORKFLOW_FACTORY_ABI` from this package's entry
+point.
+
+Do not edit `src/abis.ts` by hand, and do not paste raw ABI JSON — change the Solidity
+source in `contracts/contracts/*.sol`, rebuild the contracts, and commit the regenerated
+module in the same commit.
 
 ## Versioning
 

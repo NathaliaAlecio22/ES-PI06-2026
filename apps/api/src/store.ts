@@ -2,14 +2,15 @@
 // TODO: Persist workflows and batches to the project database once
 // backend persistence is implemented.
 import { randomUUID } from "node:crypto";
+import { ethers } from "ethers";
 
 import type { Batch, Workflow } from "@provenance/shared";
 
-export const workflows = new Map<string, Workflow>();
-export const batches = new Map<string, Batch>();
+export const workflows = new Map<bigint, Workflow>();
+export const batches = new Map<bigint, Batch>();
 
-export function createId(): string {
-  return randomUUID();
+export function createId(): bigint {
+  return BigInt(ethers.keccak256(ethers.toUtf8Bytes(randomUUID())))
 }
 
 export function resetStore(): void {

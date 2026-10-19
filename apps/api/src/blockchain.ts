@@ -10,39 +10,21 @@
  * ---------------------------------------------------------------------------
  * FLAGS for the contracts team (docs/context.md asked to surface doc/code conflicts):
  *
- * 1. The ABIs below are still hand-authored copies of contracts/contracts/*.sol (compiled
- *    and tested in the Hardhat workspace; see contracts/README.md). They were verified to
- *    match when the contracts were written, but nothing keeps them in sync mechanically.
- *    packages/shared/README.md documents the intended fix: generate ABI modules from the
- *    Hardhat artifacts into packages/shared and import them here — until then, any change
- *    to the contracts must update this file in the same commit.
- * 2. `WORKFLOW_ABI` adds a few functions/events not present in the illustrative §7 sketch
- *    (`createBatch`, `getSteps`, `BatchCreated`, `BatchCompromised`) because the sketch is
- *    explicitly "illustrative, not final" and omits how a batch's initial state is seeded.
- *    These are now confirmed against the real contract (contracts/contracts/Workflow.sol);
- *    note `reportCondition` also emits `ConditionReported` for every reading, breach or not.
- * 3. The fixed `Role` enum in §7 (Manufacturer/Distributor/Carrier/...) hardcodes specific
+ * 1. The fixed `Role` enum in §7 (Manufacturer/Distributor/Carrier/...) hardcodes specific
  *    real-world job titles, which sits in tension with §3.1's "enterprise defines its own
  *    workflow" goal — a truly generic engine might use small opaque role ids with
  *    off-chain labels instead. Implemented as specified in §7 for now; flagging the
  *    tension rather than silently resolving it. The canonical wire representation lives in
  *    packages/shared (src/domain.ts) — this module imports it and converts to/from the
  *    on-chain uint8 values with `roleToChainId`/`roleFromChainId` at the boundary.
- * 4. `config/env.ts` has two overlapping RPC settings: `RPC_URL` (required, used for
- *    CHAIN_ID pairing) and `ETHEREUM_NETWORK` (optional, legacy). apps/api/.env.example
- *    even points them at *different* networks (local Hardhat vs. Sepolia). This module
- *    treats `RPC_URL`/`CHAIN_ID` as the source of truth and `ETHEREUM_NETWORK` as a
- *    deprecated fallback — recommend deleting `ETHEREUM_NETWORK` once confirmed unused.
- * 5. On-chain `batchId` is a `uint256` (§7), but apps/api/src/store.ts mints batch ids as
- *    `randomUUID()` strings. There is currently no agreed mapping between the two. See
- *    `deriveBatchId` below for a stopgap conversion — this needs a real decision once
- *    Person 1 and Person 2 agree on the workflow-definition data shape (docs/context.md §9).
  * ---------------------------------------------------------------------------
  */
 
 import { ethers } from "ethers";
 
 import {
+  WORKFLOW_ABI,
+  WORKFLOW_FACTORY_ABI,
   batchStatusFromChain,
   roleFromChainId,
   roleToChainId,
@@ -135,34 +117,6 @@ export type BatchCompromisedEvent = ChainEventMeta & {
 };
 
 // ---------------------------------------------------------------------------
-// ABIs — see FLAG #1/#2 above: hand-authored stand-in for generated artifacts.
-// ---------------------------------------------------------------------------
-
-const WORKFLOW_FACTORY_ABI = [
-  "function createWorkflow(tuple(string name, uint8 requiredRole, bytes32 deliverableHash)[] steps) external returns (address workflow)",
-  "event WorkflowCreated(address indexed workflow, address indexed admin, uint256 timestamp)",
-] as const;
-
-const WORKFLOW_ABI = [
-  "function admin() view returns (address)",
-  "function getSteps() view returns (tuple(string name, uint8 requiredRole, bytes32 deliverableHash)[])",
-  "function stepCount() view returns (uint256)",
-  "function authorizedParticipants(address participant) view returns (uint8 role)",
-  "function batches(uint256 batchId) view returns (address currentCustodian, uint256 currentStepIndex, uint8 status, uint256 updatedAt)",
-  "function registerParticipant(address participant, uint8 role) external",
-  "function revokeParticipant(address participant) external",
-  "function createBatch(uint256 batchId, address initialCustodian) external",
-  "function transferCustody(uint256 batchId, address to, bytes32 deliverableHash, bytes32 dataHash, bytes signature) external",
-  "function reportCondition(uint256 batchId, bytes32 conditionKey, int256 value, int256 threshold, uint256 timestamp) external",
-  "event ParticipantRegistered(address indexed participant, uint8 indexed role)",
-  "event ParticipantRevoked(address indexed participant)",
-  "event BatchCreated(uint256 indexed batchId, address indexed initialCustodian)",
-  "event CustodyTransferred(uint256 indexed batchId, address indexed from, address indexed to, uint256 stepIndex, bytes32 deliverableHash, bytes32 dataHash, uint256 timestamp)",
-  "event ConditionReported(uint256 indexed batchId, bytes32 conditionKey, int256 value, int256 threshold, uint256 timestamp)",
-  "event BatchCompromised(uint256 indexed batchId, string reason)",
-] as const;
-
-// ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
 
@@ -178,14 +132,6 @@ export function assertBytes32(value: string, field = "hash"): string {
     throw new Error(`Invalid ${field}: "${value}" must be a 0x-prefixed 32-byte hex string`);
   }
   return value;
-}
-
-/**
- * Bridge between the off-chain UUID batch ids in src/store.ts and the on-chain
- * uint256 batchId expected by the contract.
- */
-export function deriveBatchId(offChainBatchId: string): bigint {
-  return BigInt(ethers.keccak256(ethers.toUtf8Bytes(offChainBatchId)));
 }
 
 // ---------------------------------------------------------------------------
