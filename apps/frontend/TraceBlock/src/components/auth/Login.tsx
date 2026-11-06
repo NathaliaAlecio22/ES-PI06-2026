@@ -1,309 +1,229 @@
 
-import { useState, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
+import {
+  Blocks,
+  PackageOpen,
+  Truck,
+  Warehouse,
+  PackageCheck,
+  ShieldCheck,
+  ArrowRight,
+  LockKeyhole,
+  Eye,
+  EyeOff,
+  type LucideIcon,
+} from "lucide-react";
 
-type IconName = "shield" | "eye" | "lock" | "arrow";
-
-const paths: Record<IconName, ReactNode> = {
-  shield: (
-    <>
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
-      <path d="m9 12 2 2 4-4" />
-    </>
-  ),
-  eye: (
-    <>
-      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z" />
-      <circle cx="12" cy="12" r="3" />
-    </>
-  ),
-  lock: (
-    <>
-      <rect x="4" y="10" width="16" height="11" rx="2" />
-      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-    </>
-  ),
-  arrow: (
-    <>
-      <path d="M5 12h14M13 6l6 6-6 6" />
-    </>
-  ),
-};
-
-function Icon({
-  name,
-  size = 18,
-}: {
-  name: IconName;
-  size?: number;
-}) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {paths[name]}
-    </svg>
-  );
+interface LoginProps {
+  onLogin: () => void;
+  onRegister: () => void;
 }
 
-function Logo() {
+function AuthBrand({ darkText = false }: { darkText?: boolean }) {
   return (
-    <div className="flex min-w-[165px] items-center gap-[10px] text-[#60a5fa]">
-      <svg
-        className="h-[33px] w-[33px] shrink-0"
-        viewBox="0 0 40 40"
-        aria-hidden="true"
-      >
-        <rect x="4" y="4" width="14" height="14" rx="4" fill="currentColor" />
-        <rect
-          x="22"
-          y="22"
-          width="14"
-          height="14"
-          rx="4"
-          fill="currentColor"
-          opacity=".62"
-        />
-        <path
-          d="M17 11h4a8 8 0 0 1 8 8v3M23 29h-4a8 8 0 0 1-8-8v-3"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-        />
-      </svg>
+    <div className="flex items-center gap-[10px] text-[20px] font-bold tracking-[-0.6px]">
+      <span className="grid size-[34px] shrink-0 place-items-center rounded-[9px] bg-[#315cf5] text-white shadow-[0_4px_16px_rgba(49,92,245,0.28)]">
+        <Blocks size={21} strokeWidth={2.2} />
+      </span>
 
-      <div className="flex flex-col">
-        <strong className="text-[17px] leading-[1.1] tracking-[-0.3px] text-white">
-          TraceBlock
-        </strong>
-        <span className="mt-[3px] text-[8.5px] font-semibold uppercase tracking-[0.8px] text-[#8ba0bc]">
-          Blockchain Provenance
-        </span>
-      </div>
+      <span className={darkText ? "text-[#111827]" : "text-white"}>
+        Trace<span className="text-[#829cff]">Block</span>
+      </span>
     </div>
   );
 }
 
-interface LoginProps {
-  login: () => void;
+function AuthButton({
+  children,
+  icon: Icon,
+  type = "button",
+}: {
+  children: ReactNode;
+  icon?: LucideIcon;
+  type?: "button" | "submit";
+}) {
+  return (
+    <button
+      type={type}
+      className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[8px] bg-[#315cf5] px-4 text-[12px] font-semibold text-white shadow-sm transition duration-[180ms] hover:-translate-y-px hover:bg-[#264bd7]"
+    >
+      {children}
+      {Icon && <Icon size={16} />}
+    </button>
+  );
 }
 
-export default function Login({ login }: LoginProps) {
-  const [show, setShow] = useState(false);
+export default function Login({ onLogin, onRegister }: LoginProps) {
+  const [showPassword, setShowPassword] = useState(false);
+
+  const submitLogin = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    onLogin();
+  };
 
   return (
-    <main className="grid min-h-screen grid-cols-[45%_55%] bg-white">
+    <main className="grid min-h-screen grid-cols-[minmax(480px,0.92fr)_minmax(580px,1.08fr)] bg-white max-[900px]:grid-cols-1">
 
-      {/* Painel esquerdo */}
-      <section className="relative flex min-h-screen flex-col overflow-hidden bg-[#0b1730] px-[55px] py-[42px] text-white before:pointer-events-none before:absolute before:inset-0 before:bg-[linear-gradient(135deg,transparent_45%,rgba(37,99,235,0.06))] before:content-['']">
+      {/* PAINEL ESQUERDO */}
+      <section className="relative hidden min-h-screen flex-col overflow-hidden bg-[#111827] px-14 py-11 text-white min-[901px]:flex">
 
-        {/* Logo */}
+        <div className="pointer-events-none absolute -right-[20%] -bottom-[45%] left-[20%] h-[70%] rounded-[50%] border border-[rgba(96,119,194,0.15)]" />
+
         <div className="relative z-10">
-          <Logo />
+          <AuthBrand />
         </div>
 
-        {/* Mensagem principal */}
-        <div className="relative z-10 mt-auto w-full max-w-[540px]">
-          <span className="text-[8.5px] font-bold uppercase tracking-[1.1px] text-[#60a5fa]">
-            RASTREABILIDADE COM CONFIANÇA
+        <div className="relative z-10 mt-[clamp(70px,12vh,120px)] max-w-[580px]">
+          <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#aebdfc]">
+            Rastreabilidade empresarial
           </span>
 
-          <h1 className="my-3 max-w-[540px] text-[40px] font-bold leading-[1.12] tracking-[-1.4px] text-white">
-            Transparência em cada etapa da cadeia.
+          <h1 className="my-[18px] text-[clamp(34px,3vw,50px)] font-bold leading-[1.12] tracking-[-2px]">
+            Transparência em cada etapa.
+            <br />
+            Confiança em toda a cadeia.
           </h1>
 
-          <p className="max-w-[500px] text-[14px] leading-[1.7] text-[#a9b7ca]">
-            Registre, valide e acompanhe a origem de produtos com a
-            segurança de uma rede Blockchain.
+          <p className="max-w-[530px] text-[16px] leading-[1.7] text-[#aab3c2]">
+            Conectamos produtos, organizações e movimentações em um histórico
+            seguro e verificável.
           </p>
         </div>
 
-        {/* Ilustração Blockchain */}
-        <div className="relative z-10 mx-auto mt-7 mb-auto w-full max-w-[400px]">
-          <svg
-            className="block h-auto w-full text-[#60a5fa]"
-            viewBox="0 0 620 260"
-          >
-            <g fill="none" stroke="currentColor">
-              <path
-                d="M98 127h118M284 127h66M418 127h104"
-                strokeWidth="3"
-                strokeDasharray="7 8"
-                opacity=".28"
-              />
+        <div className="relative z-10 mt-[52px] h-[210px] w-[95%] max-w-[620px]">
+          <div className="absolute top-[52%] left-[7%] h-px w-[84%] -rotate-[8deg] bg-gradient-to-r from-[#315cf5] to-[#8099f5] opacity-75" />
 
-              <path
-                d="M157 87v-27h160v36M384 95V59h81"
-                strokeWidth="2"
-                opacity=".2"
-              />
-            </g>
+          {[
+            { icon: PackageOpen, label: "Origem", x: "4%", y: "52%" },
+            { icon: Truck, label: "Transporte", x: "36%", y: "19%" },
+            { icon: Warehouse, label: "Armazém", x: "67%", y: "52%" },
+            { icon: PackageCheck, label: "Destino", x: "87%", y: "14%" },
+          ].map(({ icon: Icon, label, x, y }) => (
+            <div key={label} className="absolute text-center" style={{ left: x, top: y }}>
+              <span className="grid size-[46px] place-items-center rounded-[12px] border border-[#44516a] bg-[#172033] text-[#9cb0ff] shadow-[0_0_0_6px_rgba(49,92,245,0.06)]">
+                <Icon size={20} />
+              </span>
 
-            {[
-              [40, 90],
-              [216, 90],
-              [350, 90],
-              [522, 90],
-            ].map((p, i) => (
-              <g key={i} transform={`translate(${p[0]} ${p[1]})`}>
-                <rect
-                  width="68"
-                  height="68"
-                  rx="14"
-                  fill={i === 2 ? "#2563EB" : "#142B4D"}
-                  stroke={i === 2 ? "#60A5FA" : "#2b4568"}
-                />
-
-                <path
-                  d="m18 25 16-8 16 8-16 8-16-8Zm0 0v20l16 8 16-8V25M34 33v20"
-                  fill="none"
-                  stroke="#fff"
-                  strokeWidth="2"
-                  opacity=".85"
-                />
-
-                <circle
-                  cx="68"
-                  cy="34"
-                  r="5"
-                  fill={i < 3 ? "#38bdf8" : "#16a34a"}
-                />
-              </g>
-            ))}
-          </svg>
+              <small className="mt-2 block text-[10px] text-[#8895a9]">
+                {label}
+              </small>
+            </div>
+          ))}
         </div>
 
-        {/* Informação de segurança */}
-        <div className="relative z-10 flex items-center gap-[11px] border-t border-white/10 pt-6 text-[#60a5fa]">
-          <Icon name="shield" />
+        <div className="relative z-10 mt-auto flex items-center gap-3 text-[#8ea4fb]">
+          <ShieldCheck size={18} />
 
-          <div className="flex flex-col gap-1">
-            <strong className="text-[11px] text-[#dbe7f5]">
-              Registros íntegros e auditáveis
-            </strong>
-
-            <span className="text-[9px] text-[#7086a3]">
-              Cada operação é validada antes de integrar a cadeia de custódia.
-            </span>
-          </div>
+          <span className="flex flex-col gap-[3px]">
+            <b className="text-[12px] text-[#e7eaf0]">
+              Rede íntegra e auditável
+            </b>
+            <small className="text-[10px] text-[#7f8999]">
+              Todos os registros protegidos por Blockchain
+            </small>
+          </span>
         </div>
       </section>
 
-      {/* Painel direito */}
-      <section className="grid min-h-screen place-items-center px-10 py-[50px]">
+      {/* PAINEL DIREITO */}
+      <section className="flex min-h-screen flex-col items-center justify-center bg-white px-[6%] py-12 max-[900px]:px-7 max-[620px]:justify-start max-[620px]:px-5 max-[620px]:py-7">
+
         <div className="w-full max-w-[420px]">
 
-          {/* Logo para dispositivos menores */}
-          <div className="mb-10 lg:hidden">
-            <Logo />
+          <div className="mb-[45px] hidden max-[900px]:block">
+            <AuthBrand darkText />
           </div>
 
-          <span className="text-[8.5px] font-bold uppercase tracking-[1.1px] text-[#2563eb]">
-            ACESSO SEGURO
+          <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#315cf5]">
+            Portal TraceBlock
           </span>
 
-          <h2 className="mt-[9px] mb-[5px] text-[25px] font-bold tracking-[-0.5px] text-[#0b1730]">
+          <h2 className="mt-[10px] mb-[9px] text-[29px] font-bold leading-[1.2] tracking-[-1px] text-[#111827] max-[620px]:text-[25px]">
             Bem-vindo de volta
           </h2>
 
-          <p className="mb-[26px] text-[11px] text-[#64748b]">
-            Acesse sua plataforma de rastreabilidade.
+          <p className="mb-[30px] text-[14px] leading-[1.6] text-[#64748b]">
+            Acesse sua conta para continuar acompanhando sua cadeia de
+            suprimentos.
           </p>
 
-          {/* Campo de e-mail */}
-          <div className="mb-[15px] flex flex-col gap-[6px]">
-            <label className="text-[8.5px] font-semibold text-[#475569]">
-              E-mail
-            </label>
+          <form onSubmit={submitLogin} className="flex flex-col gap-[19px]">
 
-            <input
-              type="email"
-              defaultValue="carlos.lima@traceblock.com"
-              placeholder="Digite seu e-mail"
-              className="h-[43px] w-full rounded-[6px] border border-[#dbe2ea] bg-white px-[10px] text-[10px] text-[#172033] outline-none transition focus:border-[#60a5fa] focus:ring-[3px] focus:ring-[#eff6ff]"
-            />
-          </div>
+            <label className="flex flex-col gap-2 text-[12px] font-semibold text-[#344054]">
+              E-mail corporativo *
 
-          {/* Campo de senha */}
-          <div className="mb-[15px] flex flex-col gap-[6px]">
-            <label className="text-[8.5px] font-semibold text-[#475569]">
-              Senha
-            </label>
-
-            <div className="relative">
               <input
-                type={show ? "text" : "password"}
-                defaultValue="traceblock2026"
-                placeholder="Digite sua senha"
-                className="h-[43px] w-full rounded-[6px] border border-[#dbe2ea] bg-white py-0 pr-10 pl-[10px] text-[10px] text-[#172033] outline-none transition focus:border-[#60a5fa] focus:ring-[3px] focus:ring-[#eff6ff]"
+                type="email"
+                placeholder="nome@empresa.com.br"
+                required
+                className="h-[46px] rounded-[9px] border border-[#d7dce3] px-[13px] text-[13px] font-normal outline-none transition focus:border-[#315cf5] focus:shadow-[0_0_0_3px_rgba(49,92,245,0.1)]"
               />
+            </label>
+
+            <label className="flex flex-col gap-2 text-[12px] font-semibold text-[#344054]">
+              Senha *
+
+              <div className="flex h-[46px] items-center gap-[10px] rounded-[9px] border border-[#d7dce3] px-[13px] transition focus-within:border-[#315cf5] focus-within:shadow-[0_0_0_3px_rgba(49,92,245,0.1)]">
+                <LockKeyhole size={17} className="shrink-0 text-[#8b95a4]" />
+
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="Digite sua senha"
+                  required
+                  className="w-full min-w-0 border-0 bg-transparent text-[13px] font-normal outline-none placeholder:text-[#9ca5b3]"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? "Ocultar senha" : "Exibir senha"}
+                  className="text-[#7b8797] hover:text-[#315cf5]"
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </label>
+
+            <div className="flex items-center justify-between gap-3">
+              <label className="flex items-center gap-2 text-[12px] font-medium text-[#566174]">
+                <input type="checkbox" className="size-[15px] accent-[#315cf5]" />
+                Lembrar de mim
+              </label>
 
               <button
                 type="button"
-                onClick={() => setShow(!show)}
-                aria-label={show ? "Ocultar senha" : "Mostrar senha"}
-                className="absolute top-[7px] right-2 grid h-[30px] w-[30px] place-items-center rounded text-[#94a3b8] transition hover:text-[#2563eb]"
+                className="text-[12px] font-semibold text-[#315cf5] hover:text-[#264bd7]"
               >
-                <Icon name="eye" />
+                Esqueceu sua senha?
               </button>
             </div>
-          </div>
 
-          {/* Opções de acesso */}
-          <div className="mb-[18px] -mt-[2px] flex items-center justify-between text-[9px]">
-            <label className="flex items-center gap-[6px] text-[#64748b]">
-              <input
-                type="checkbox"
-                defaultChecked
-                className="accent-blue-600"
-              />
-              Lembrar de mim
-            </label>
+            <AuthButton type="submit" icon={ArrowRight}>
+              Entrar na plataforma
+            </AuthButton>
+          </form>
 
+          <p className="mt-[26px] text-center text-[12px] text-[#64748b]">
+            Ainda não possui uma conta?{" "}
             <button
               type="button"
-              className="text-[#2563eb] transition hover:text-[#1d4ed8]"
+              onClick={onRegister}
+              className="font-semibold text-[#315cf5] hover:text-[#264bd7]"
             >
-              Esqueceu sua senha?
+              Solicitar acesso
             </button>
-          </div>
+          </p>
 
-          {/* Botão de login */}
-          <button
-            type="button"
-            onClick={login}
-            className="inline-flex h-[43px] w-full items-center justify-center gap-2 rounded-[7px] border border-[#2563eb] bg-[#2563eb] px-[15px] text-[11px] font-semibold text-white shadow-[0_1px_2px_rgba(37,99,235,0.15)] transition hover:bg-[#1d4ed8] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-100"
-          >
-            Entrar na plataforma
-            <Icon name="arrow" size={16} />
-          </button>
-
-          {/* Aviso de segurança */}
-          <div className="mt-[18px] flex items-start gap-2 rounded-[6px] bg-[#f8fafc] p-[11px] text-[8px] leading-[1.45] text-[#64748b]">
-            <span className="shrink-0 text-[#2563eb]">
-              <Icon name="lock" size={17} />
-            </span>
-
-            <span>
-              Ambiente seguro. Todas as operações são autenticadas e
-              rastreáveis.
-            </span>
-          </div>
-
-          {/* Rodapé */}
-          <small className="mt-[26px] block text-center text-[7.5px] leading-[1.6] text-[#94a3b8]">
-            Projeto Integrador VI · Engenharia de Software
-            <br />
-            PUC-Campinas · 2026
-          </small>
+          <p className="mt-[18px] border-t border-[#eef0f3] pt-[18px] text-center text-[10px] text-[#98a1af]">
+            Para visualizar o ambiente, preencha os campos e entre.
+          </p>
         </div>
+
+        <footer className="mt-[42px] flex flex-wrap justify-center gap-5 text-[10px] text-[#98a1af]">
+          <span>© 2025 TraceBlock</span>
+          <span>Política de Privacidade</span>
+          <span>Termos de Uso</span>
+        </footer>
       </section>
     </main>
   );
