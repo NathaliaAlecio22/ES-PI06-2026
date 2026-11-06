@@ -1,17 +1,21 @@
+
 import { useState } from "react";
 import Login from "./components/auth/Login";
+import Cadastro from "./components/auth/Logout";
 
 export default function App() {
-  const [logged, setLogged] = useState(false);
+  const [view, setView] = useState<"login" | "cadastro">("login");
 
-  if (!logged) {
-    return <Login login={() => setLogged(true)} />;
-  }
-
-  return (
-    <div>
-      {/* Aqui entra o restante da sua aplicação */}
-      <h1>Bem-vindo à plataforma!</h1>
-    </div>
+  return view === "login" ? (
+    <Login
+      onLogin={() => {
+        console.log("Login enviado");
+      }}
+      onRegister={() => setView("cadastro")}
+    />
+  ) : (
+    <Cadastro
+      onLogin={() => setView("login")}
+    />
   );
 }
