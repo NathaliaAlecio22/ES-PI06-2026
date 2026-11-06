@@ -14,10 +14,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-interface LoginProps {
-  onLogin: () => void;
-  onRegister: () => void;
-}
+import { useNavigate } from "react-router-dom";
+
+
 
 function AuthBrand({ darkText = false }: { darkText?: boolean }) {
   return (
@@ -53,12 +52,12 @@ function AuthButton({
   );
 }
 
-export default function Login({ onLogin, onRegister }: LoginProps) {
+export default function Login() {
+    const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
 
   const submitLogin = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    onLogin();
   };
 
   return (
@@ -206,8 +205,8 @@ export default function Login({ onLogin, onRegister }: LoginProps) {
           <p className="mt-[26px] text-center text-[12px] text-[#64748b]">
             Ainda não possui uma conta?{" "}
             <button
+            onClick={() => navigate('/cadastro')}
               type="button"
-              onClick={onRegister}
               className="font-semibold text-[#315cf5] hover:text-[#264bd7]"
             >
               Solicitar acesso

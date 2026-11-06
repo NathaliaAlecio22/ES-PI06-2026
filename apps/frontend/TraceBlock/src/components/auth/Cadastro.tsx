@@ -16,11 +16,9 @@ import {
   EyeOff,
   ChevronDown,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
-interface CadastroProps {
-  onLogin: () => void;
-  onRegister?: () => void;
-}
+
 
 function AuthBrand({ darkText = false }: { darkText?: boolean }) {
   return (
@@ -64,7 +62,8 @@ function AuthField({
   );
 }
 
-export default function Cadastro({ onLogin }: CadastroProps) {
+export default function Cadastro() {
+  const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [accepted, setAccepted] = useState(false);
@@ -173,7 +172,7 @@ export default function Cadastro({ onLogin }: CadastroProps) {
               </div>
 
               <button
-                onClick={onLogin}
+              onClick={() => navigate("/login")}
                 className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[8px] bg-[#315cf5] px-4 text-[12px] font-semibold text-white transition hover:bg-[#264bd7]"
               >
                 <ArrowLeft size={16} />
@@ -184,7 +183,7 @@ export default function Cadastro({ onLogin }: CadastroProps) {
             <>
               <button
                 type="button"
-                onClick={onLogin}
+                onClick={() => navigate("/login")}
                 className="mb-[27px] flex items-center gap-[5px] text-[12px] font-semibold text-[#657084] transition hover:text-[#315cf5]"
               >
                 <ArrowLeft size={15} />
@@ -321,8 +320,8 @@ export default function Cadastro({ onLogin }: CadastroProps) {
               <p className="mt-[26px] text-center text-[12px] text-[#64748b]">
                 Já possui uma conta?{" "}
                 <button
+                onClick={() => navigate('/login')}
                   type="button"
-                  onClick={onLogin}
                   className="font-semibold text-[#315cf5] hover:text-[#264bd7]"
                 >
                   Entrar
