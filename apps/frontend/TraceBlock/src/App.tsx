@@ -1,21 +1,17 @@
 
-import { useState } from "react";
 import Login from "./components/auth/Login";
-import Cadastro from "./components/auth/Logout";
+import Cadastro from "./components/auth/Cadastro";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import ForgotPassword from "./components/auth/ForgotPassword";
 
 export default function App() {
-  const [view, setView] = useState<"login" | "cadastro">("login");
-
-  return view === "login" ? (
-    <Login
-      onLogin={() => {
-        console.log("Login enviado");
-      }}
-      onRegister={() => setView("cadastro")}
-    />
-  ) : (
-    <Cadastro
-      onLogin={() => setView("login")}
-    />
-  );
+  return(
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/cadastro" element={<Cadastro />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+      </Routes>
+    </BrowserRouter>
+  )
 }
