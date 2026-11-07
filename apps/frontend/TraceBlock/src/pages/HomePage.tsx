@@ -4,6 +4,7 @@ import type { Page } from "../components/layout/sidebar.config";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../components/layout/AppLayout";
 import Overview from "./overview/page";
+import ProductsPage from "./products/page";
 
 
 export function HomePage() {
@@ -20,6 +21,10 @@ export function HomePage() {
                 <Overview
                 goProducts={() => setPage("products")}
                 />
+            )}
+
+            {page === 'products' && (
+                <ProductsPage />
             )}
         </AppLayout>
     )
