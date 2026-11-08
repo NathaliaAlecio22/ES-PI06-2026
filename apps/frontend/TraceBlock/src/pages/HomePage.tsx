@@ -7,6 +7,7 @@ import Overview from "./overview/page";
 import ProductsPage from "./products/page";
 import ParticipantsPage from "./participantes/page";
 import BlockchainPage from "./blockchain/page";
+import ReportsPage from "./reports/page";
 
 
 export function HomePage() {
@@ -35,6 +36,10 @@ export function HomePage() {
 
             {page === 'blockchain' && (
                 <BlockchainPage />
+            )}
+
+            {page === 'reports' && (
+                <ReportsPage />
             )}
         </AppLayout>
     )
