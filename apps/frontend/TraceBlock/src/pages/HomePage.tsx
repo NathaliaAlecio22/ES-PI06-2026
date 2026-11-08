@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import AppLayout from "../components/layout/AppLayout";
 import Overview from "./overview/page";
 import ProductsPage from "./products/page";
+import ParticipantsPage from "./participantes/page";
 
 
 export function HomePage() {
@@ -25,6 +26,10 @@ export function HomePage() {
 
             {page === 'products' && (
                 <ProductsPage />
+            )}
+
+            {page === 'participants' && (
+                <ParticipantsPage />
             )}
         </AppLayout>
     )
