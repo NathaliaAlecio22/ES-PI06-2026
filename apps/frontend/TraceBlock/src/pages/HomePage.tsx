@@ -6,6 +6,7 @@ import AppLayout from "../components/layout/AppLayout";
 import Overview from "./overview/page";
 import ProductsPage from "./products/page";
 import ParticipantsPage from "./participantes/page";
+import BlockchainPage from "./blockchain/page";
 
 
 export function HomePage() {
@@ -30,6 +31,10 @@ export function HomePage() {
 
             {page === 'participants' && (
                 <ParticipantsPage />
+            )}
+
+            {page === 'blockchain' && (
+                <BlockchainPage />
             )}
         </AppLayout>
     )
