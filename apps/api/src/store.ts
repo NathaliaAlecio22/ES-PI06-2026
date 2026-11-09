@@ -6,7 +6,15 @@ import { ethers } from "ethers";
 
 import type { Batch, Workflow } from "@provenance/shared";
 
-export const workflows = new Map<bigint, Workflow>();
+/**
+ * Workflow as stored by the API: the shared response shape plus the address of the
+ * on-chain `Workflow` instance deployed via `createWorkflow` in src/blockchain.ts.
+ */
+export type StoredWorkflow = Workflow & {
+  workflowAddress: string;
+};
+
+export const workflows = new Map<bigint, StoredWorkflow>();
 export const batches = new Map<bigint, Batch>();
 
 /**

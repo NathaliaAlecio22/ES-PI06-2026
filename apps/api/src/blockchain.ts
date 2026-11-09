@@ -209,12 +209,27 @@ export function getWorkflowContract(workflowAddress: string, withSigner = false)
 // Error handling
 // ---------------------------------------------------------------------------
 
-function toChainError(action: string, error: unknown): Error {
+/** Error thrown by this module; `revertReason` is set when the chain itself rejected the
+ * submission (contract reverted) rather than the RPC/transport failing. */
+export type ChainError = Error & { revertReason?: string };
+
+function toChainError(action: string, error: unknown): ChainError {
   const details =
     (error as { reason?: string }).reason ??
     (error as { shortMessage?: string }).shortMessage ??
     (error instanceof Error ? error.message : String(error));
-  return new Error(`${action} failed: ${details}`);
+  const wrapped: ChainError = new Error(`${action} failed: ${details}`);
+  // Tag rejections (the contract reverted) so callers can tell "the chain refused this
+  // submission" apart from "we could not reach the chain".
+  if ((error as { code?: string }).code === "CALL_EXCEPTION") {
+    wrapped.revertReason = details;
+  }
+  return wrapped;
+}
+
+/** Decoded revert reason when the chain rejected a submission; `undefined` for transport/configuration failures. */
+export function revertReasonOf(error: unknown): string | undefined {
+  return (error as ChainError).revertReason;
 }
 
 async function sendAndWait(action: string, call: () => Promise<ethers.ContractTransactionResponse>) {
@@ -224,9 +239,19 @@ async function sendAndWait(action: string, call: () => Promise<ethers.ContractTr
   } catch (error) {
     throw toChainError(action, error);
   }
-  const receipt = await tx.wait();
+  let receipt: ethers.ContractTransactionReceipt | null;
+  try {
+    receipt = await tx.wait();
+  } catch (error) {
+    throw toChainError(action, error);
+  }
   if (!receipt) {
     throw new Error(`${action} failed: transaction was not mined`);
+  }
+  // Some ethers versions resolve `wait()` with a reverted receipt instead of throwing;
+  // a revert must never be mistaken for success.
+  if (receipt.status === 0) {
+    throw toChainError(action, { code: "CALL_EXCEPTION", reason: "transaction reverted on-chain" });
   }
   return receipt;
 }
@@ -491,6 +516,24 @@ export async function getConditionBreaches(
 // (2) is that address allowed — a state lookup the contract performs
 // on-chain (`authorizedParticipants` + the batch's current custodian).
 // ---------------------------------------------------------------------------
+
+/**
+ * Deterministically hashes the off-chain references of a transfer (docs/context.md §3.3:
+ * only the hash reaches the chain). Both sides of the boundary must use this exact
+ * formula — the client signs the transfer digest built over the resulting `dataHash`,
+ * and the API recomputes it to verify that signature — so key order and reference order
+ * matter. Keep in sync with any client-side implementation.
+ */
+export function buildDataHash(params: { locationReference?: string; conditionReferences: string[] }): string {
+  return ethers.keccak256(
+    ethers.toUtf8Bytes(
+      JSON.stringify({
+        locationReference: params.locationReference ?? null,
+        conditionReferences: params.conditionReferences,
+      }),
+    ),
+  );
+}
 
 /**
  * Builds the digest the current custodian must sign to authorize a transfer. Binds the
