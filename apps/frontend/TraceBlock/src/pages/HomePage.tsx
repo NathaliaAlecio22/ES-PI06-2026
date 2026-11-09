@@ -8,6 +8,7 @@ import ProductsPage from "./products/page";
 import ParticipantsPage from "./participantes/page";
 import BlockchainPage from "./blockchain/page";
 import ReportsPage from "./reports/page";
+import TransfersPage from "./transfer/page";
 
 
 export function HomePage() {
@@ -40,6 +41,10 @@ export function HomePage() {
 
             {page === 'reports' && (
                 <ReportsPage />
+            )}
+
+            {page === 'transfers' && (
+                <TransfersPage />
             )}
         </AppLayout>
     )
