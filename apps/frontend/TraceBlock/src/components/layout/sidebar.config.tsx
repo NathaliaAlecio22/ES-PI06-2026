@@ -21,7 +21,9 @@ export type Page =
   | "blockchain"
   | "sensors"
   | "reports"
-  | "admin";
+  | "admin"
+  | "support"
+  | "settings";
 
 export const navItems: {
   id: Page;

@@ -26,6 +26,8 @@ const pageLabels: Record<Page, string> = {
   sensors: "Condições e sensores",
   reports: "Relatórios",
   admin: "Administração",
+  support: "Ajuda e suporte",
+  settings: "Configurações",
 };
 
 export default function Topbar({ page, openMenu }: TopbarProps) {
