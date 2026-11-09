@@ -50,6 +50,12 @@ export const workflowResponseSchema = z.object({
   id: uint256IdSchema,
   name: z.string().min(1),
   adminAddress: evmAddressSchema,
+  /**
+   * Address of the on-chain `Workflow` instance deployed per enterprise via the factory
+   * (docs/context.md §3, §7). Clients need it — plus the chain id — to build the transfer
+   * digest they must sign; see `buildTransferDigest` in apps/api/src/blockchain.ts.
+   */
+  workflowAddress: evmAddressSchema,
   steps: z.array(stepSchema),
   participants: z.array(participantSchema),
   createdAt: z.iso.datetime(),
