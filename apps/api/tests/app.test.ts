@@ -1,5 +1,4 @@
 import { ethers } from "ethers";
-import request from "supertest";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { app } from "../src/app";
@@ -12,6 +11,9 @@ import {
 } from "../src/blockchain";
 import { env } from "../src/config/env";
 import { batches, resetStore, workflows } from "../src/store";
+// Same supertest API, instrumented: every request/response of the run is also written to
+// logs/api-run.log, grouped by test — the transcript of what the API actually returned.
+import { request } from "./helpers/api-log";
 
 // Pre-funded local-Hardhat accounts — used here as ordinary well-formed EVM addresses.
 const ADMIN_ADDRESS = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";

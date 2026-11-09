@@ -88,6 +88,12 @@ npm test
 npm run build
 ```
 
+A execução dos testes também gera `apps/api/logs/api-run.log`: o registro de cada
+requisição feita pela suíte com o corpo enviado e a resposta devolvida pela API
+(status + corpo), agrupado por teste, além de um resumo ao final. É a forma mais
+direta de inspecionar o que os endpoints realmente responderam, além do resultado
+dos asserts do Vitest. O arquivo é recriado a cada execução e é ignorado pelo git.
+
 ## Ambiente Hardhat (para a futura integração com contratos)
 
 `src/blockchain.ts` já implementa toda a camada de comunicação com os contratos
