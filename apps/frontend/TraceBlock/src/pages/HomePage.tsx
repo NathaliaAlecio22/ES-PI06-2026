@@ -9,6 +9,7 @@ import ParticipantsPage from "./participantes/page";
 import BlockchainPage from "./blockchain/page";
 import ReportsPage from "./reports/page";
 import TransfersPage from "./transfer/page";
+import SensorsPage from "./sensor/page";
 
 
 export function HomePage() {
@@ -45,6 +46,10 @@ export function HomePage() {
 
             {page === 'transfers' && (
                 <TransfersPage />
+            )}
+
+            {page === 'sensors' && (
+                <SensorsPage />
             )}
         </AppLayout>
     )
