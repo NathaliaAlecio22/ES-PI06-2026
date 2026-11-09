@@ -13,6 +13,15 @@ npm run dev
 
 The API starts on port `3000` by default. Use `npm test` to run the HTTP tests and `npm run build` to compile TypeScript.
 
+## Test run log
+
+`npm test` também registra, em `logs/api-run.log`, cada requisição HTTP feita pela suíte:
+o corpo enviado e a resposta real da API (status + corpo), agrupados por teste, com um
+resumo ao final (`37 requisições · 200×2 · 201×19 · …`). O arquivo é recriado a cada
+execução, cada entrada é gravada assim que a resposta chega (sobrevive a execuções que
+quebrem no meio) e já está coberto pelo `.gitignore` da raiz. A instrumentação vive em
+`tests/helpers/api-log.ts` — um wrapper do supertest com a mesma assinatura.
+
 ## Current endpoints
 
 - `GET /api/health`
