@@ -101,7 +101,7 @@ participantesRouter.post("/cadastro", async (req, res) => {
           identificacao: cnpj,
           email,
           tipo,
-          ativo: false,
+          ativo: true,
         },
       });
 
@@ -111,7 +111,7 @@ participantesRouter.post("/cadastro", async (req, res) => {
           nome: nomeCompleto,
           email,
           senha_hash: senhaHash,
-          perfil: "PARTICIPANTE",
+          perfil: "ADMINISTRADOR",
           telefone,
           cargo,
         },
@@ -124,7 +124,7 @@ participantesRouter.post("/cadastro", async (req, res) => {
     });
 
     res.status(201).json({
-      message: "Cadastro enviado. Aguarde a aprovação do administrador.",
+        message: "Empresa cadastrada com sucesso! Você já pode acessar o TraceBlock.",
       data: result,
     });
   } catch (error) {
