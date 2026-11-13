@@ -8,7 +8,6 @@ import {
   PackageCheck,
   ShieldCheck,
   Check,
-  Clock3,
   ArrowLeft,
   ArrowRight,
   LockKeyhole,
@@ -17,6 +16,10 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import {
+  cadastrarParticipante,
+  type CadastroParticipante,
+} from "../../services/participantes";
 
 
 
@@ -39,11 +42,13 @@ function AuthField({
   placeholder,
   type = "text",
   required = false,
+  name,
 }: {
   label: string;
   placeholder: string;
   type?: string;
   required?: boolean;
+  name: string;
 }) {
   return (
     <label className="flex flex-col gap-2 text-[12px] font-semibold text-[#344054]">
@@ -53,6 +58,7 @@ function AuthField({
       </span>
 
       <input
+        name={name}
         type={type}
         placeholder={placeholder}
         required={required}
@@ -68,10 +74,46 @@ export default function Cadastro() {
   const [password, setPassword] = useState("");
   const [accepted, setAccepted] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
-  const submitRegister = (e: FormEvent<HTMLFormElement>) => {
+  const submitRegister = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setSubmitted(true);
+    setSubmitError("");
+
+    const formData = new FormData(e.currentTarget);
+    const cadastro: CadastroParticipante = {
+      nomeCompleto: String(formData.get("nomeCompleto") ?? ""),
+      email: String(formData.get("email") ?? ""),
+      senha: String(formData.get("senha") ?? ""),
+      confirmarSenha: String(formData.get("confirmarSenha") ?? ""),
+      telefone: String(formData.get("telefone") ?? ""),
+      nomeOrganizacao: String(formData.get("nomeOrganizacao") ?? ""),
+      cnpj: String(formData.get("cnpj") ?? ""),
+      tipo: String(formData.get("tipo") ?? ""),
+      cargo: String(formData.get("cargo") ?? ""),
+      aceitouTermos: accepted,
+    };
+
+    if (cadastro.senha !== cadastro.confirmarSenha) {
+      setSubmitError("As senhas não conferem.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await cadastrarParticipante(cadastro);
+      setSubmitted(true);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível concluir o cadastro.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -147,36 +189,26 @@ export default function Cadastro() {
                 <Check size={30} />
               </span>
 
-              <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#315cf5]">
-                Cadastro recebido
+              <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#16a36a]">
+                Cadastro concluído
               </span>
 
               <h2 className="mt-3 mb-2 text-[29px] font-bold leading-[1.2] tracking-[-1px] text-[#111827]">
-                Solicitação de cadastro enviada
+                Sua empresa foi cadastrada!
               </h2>
 
               <p className="mx-auto mb-[25px] text-[14px] leading-[1.7] text-[#64748b]">
-                Suas informações foram recebidas. Aguarde a aprovação do
-                administrador para acessar a plataforma.
+                Sua organização já está registrada no TraceBlock.
+                Agora você pode acessar sua conta e começar a gerenciar
+                seus produtos e cadeias de custódia.
               </p>
-
-              <div className="mb-6 flex items-start gap-[11px] rounded-[9px] border border-[#dbe3ff] bg-[#f7f9ff] p-[14px] text-left text-[#315cf5]">
-                <Clock3 size={19} className="mt-0.5 shrink-0" />
-                <span className="flex flex-col gap-1">
-                  <b className="text-[11px] text-[#273451]">O que acontece agora?</b>
-                  <small className="text-[10px] leading-[1.5] text-[#66728b]">
-                    Nossa equipe validará os dados da organização. Você receberá
-                    um retorno por e-mail.
-                  </small>
-                </span>
-              </div>
 
               <button
               onClick={() => navigate("/login")}
                 className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[8px] bg-[#315cf5] px-4 text-[12px] font-semibold text-white transition hover:bg-[#264bd7]"
               >
                 <ArrowLeft size={16} />
-                Voltar para o login
+                Acessar minha conta
               </button>
             </div>
           ) : (
@@ -213,14 +245,15 @@ export default function Cadastro() {
                   </legend>
 
                   <div className="grid grid-cols-2 gap-4 max-[620px]:grid-cols-1">
-                    <AuthField label="Nome completo" placeholder="Seu nome completo" required />
-                    <AuthField label="E-mail corporativo" placeholder="nome@empresa.com.br" type="email" required />
+                    <AuthField name="nomeCompleto" label="Nome completo" placeholder="Seu nome completo" required />
+                    <AuthField name="email" label="E-mail corporativo" placeholder="nome@empresa.com.br" type="email" required />
 
                     <label className="flex flex-col gap-2 text-[12px] font-semibold text-[#344054]">
                       Senha *
                       <div className="flex h-[46px] items-center gap-[10px] rounded-[9px] border border-[#d7dce3] px-[13px] focus-within:border-[#315cf5] focus-within:shadow-[0_0_0_3px_rgba(49,92,245,0.1)]">
                         <LockKeyhole size={17} className="shrink-0 text-[#8b95a4]" />
                         <input
+                          name="senha"
                           type={showPassword ? "text" : "password"}
                           placeholder="Mínimo de 8 caracteres"
                           required
@@ -255,8 +288,8 @@ export default function Cadastro() {
                       )}
                     </label>
 
-                    <AuthField label="Confirmar senha" placeholder="Repita sua senha" type="password" required />
-                    <AuthField label="Telefone" placeholder="(00) 00000-0000" />
+                    <AuthField name="confirmarSenha" label="Confirmar senha" placeholder="Repita sua senha" type="password" required />
+                    <AuthField name="telefone" label="Telefone" placeholder="(00) 00000-0000" />
                   </div>
                 </fieldset>
 
@@ -268,13 +301,13 @@ export default function Cadastro() {
                   </legend>
 
                   <div className="grid grid-cols-2 gap-4 max-[620px]:grid-cols-1">
-                    <AuthField label="Nome da organização" placeholder="Razão social" required />
-                    <AuthField label="CNPJ" placeholder="00.000.000/0000-00" required />
+                    <AuthField name="nomeOrganizacao" label="Nome da organização" placeholder="Razão social" required />
+                    <AuthField name="cnpj" label="CNPJ" placeholder="00.000.000/0000-00" required />
 
                     <label className="flex flex-col gap-2 text-[12px] font-semibold text-[#344054]">
                       Tipo de participante *
                       <div className="relative flex h-[46px] items-center rounded-[9px] border border-[#d7dce3] px-[13px] focus-within:border-[#315cf5]">
-                        <select required defaultValue="" className="w-full appearance-none bg-transparent pr-7 text-[13px] font-normal text-[#111827] outline-none">
+                        <select name="tipo" required defaultValue="" className="w-full appearance-none bg-transparent pr-7 text-[13px] font-normal text-[#111827] outline-none">
                           <option value="" disabled>Selecione o tipo</option>
                           <option>Fabricante</option>
                           <option>Distribuidor</option>
@@ -286,7 +319,7 @@ export default function Cadastro() {
                       </div>
                     </label>
 
-                    <AuthField label="Cargo ou função" placeholder="Ex.: Gerente de operações" required />
+                    <AuthField name="cargo" label="Cargo ou função" placeholder="Ex.: Gerente de operações" required />
                   </div>
                 </fieldset>
 
@@ -307,12 +340,18 @@ export default function Cadastro() {
                   </span>
                 </label>
 
+                {submitError && (
+                  <p role="alert" className="text-[12px] font-medium text-[#c03939]">
+                    {submitError}
+                  </p>
+                )}
+
                 <button
                   type="submit"
-                  disabled={!accepted}
+                  disabled={!accepted || isSubmitting}
                   className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[8px] bg-[#315cf5] px-4 text-[12px] font-semibold text-white transition hover:bg-[#264bd7] disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  Criar conta
+                  {isSubmitting ? "Enviando..." : "Criar conta"}
                   <ArrowRight size={16} />
                 </button>
               </form>
