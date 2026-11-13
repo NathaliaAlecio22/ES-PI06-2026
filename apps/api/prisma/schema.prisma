@@ -1,0 +1,102 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model acordo_entrega {
+  id              BigInt       @id @default(autoincrement())
+  movimentacao_id BigInt       @unique
+  nome_documento  String       @db.VarChar(200)
+  documento       Bytes
+  hash_documento  String       @db.VarChar(66)
+  tx_hash         String?      @unique @db.VarChar(66)
+  data_criacao    DateTime?    @default(now()) @db.Timestamptz(6)
+  movimentacao    movimentacao @relation(fields: [movimentacao_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model lote {
+  id                   BigInt              @id @default(autoincrement())
+  produto_id           BigInt
+  codigo               String              @unique @db.VarChar(100)
+  responsavel_atual_id BigInt?
+  data_fabricacao      DateTime?           @db.Date
+  data_validade        DateTime?           @db.Date
+  status               String              @default("ATIVO") @db.VarChar(30)
+  produto              produto             @relation(fields: [produto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  participante         participante?       @relation(fields: [responsavel_atual_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  movimentacao         movimentacao[]
+  registro_condicao    registro_condicao[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model movimentacao {
+  id                                                 BigInt          @id @default(autoincrement())
+  lote_id                                            BigInt
+  origem_id                                          BigInt?
+  destino_id                                         BigInt
+  usuario_id                                         BigInt
+  tipo                                               String          @db.VarChar(30)
+  data_movimentacao                                  DateTime?       @default(now()) @db.Timestamptz(6)
+  localizacao                                        String?         @db.VarChar(200)
+  tx_hash                                            String?         @unique @db.VarChar(66)
+  status_blockchain                                  String?         @default("PENDENTE") @db.VarChar(20)
+  acordo_entrega                                     acordo_entrega?
+  participante_movimentacao_destino_idToparticipante participante    @relation("movimentacao_destino_idToparticipante", fields: [destino_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lote                                               lote            @relation(fields: [lote_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  participante_movimentacao_origem_idToparticipante  participante?   @relation("movimentacao_origem_idToparticipante", fields: [origem_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuario                                            usuario         @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model participante {
+  id                                                 BigInt         @id @default(autoincrement())
+  nome                                               String         @db.VarChar(150)
+  identificacao                                      String?        @unique @db.VarChar(150)
+  email                                              String?        @db.VarChar(150)
+  tipo                                               String?        @db.VarChar(50)
+  wallet_address                                     String?        @unique @db.VarChar(42)
+  ativo                                              Boolean?       @default(true)
+  chave_publica                                      String?        @unique @db.VarChar(132)
+  lote                                               lote[]
+  movimentacao_movimentacao_destino_idToparticipante movimentacao[] @relation("movimentacao_destino_idToparticipante")
+  movimentacao_movimentacao_origem_idToparticipante  movimentacao[] @relation("movimentacao_origem_idToparticipante")
+  usuario                                            usuario[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model produto {
+  id        BigInt  @id @default(autoincrement())
+  nome      String  @db.VarChar(150)
+  descricao String?
+  lote      lote[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model registro_condicao {
+  id            BigInt    @id @default(autoincrement())
+  lote_id       BigInt
+  temperatura   Decimal?  @db.Decimal(5, 2)
+  umidade       Decimal?  @db.Decimal(5, 2)
+  localizacao   String?   @db.VarChar(200)
+  data_registro DateTime? @default(now()) @db.Timestamptz(6)
+  lote          lote      @relation(fields: [lote_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model usuario {
+  id              BigInt         @id @default(autoincrement())
+  participante_id BigInt?
+  nome            String         @db.VarChar(150)
+  email           String         @unique @db.VarChar(150)
+  senha_hash      String
+  perfil          String         @db.VarChar(30)
+  telefone        String?        @db.VarChar(30)
+  cargo           String?        @db.VarChar(100)
+  movimentacao    movimentacao[]
+  participante    participante?  @relation(fields: [participante_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
