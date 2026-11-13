@@ -8,7 +8,6 @@ import {
   PackageCheck,
   ShieldCheck,
   Check,
-  Clock3,
   ArrowLeft,
   ArrowRight,
   LockKeyhole,
@@ -190,36 +189,26 @@ export default function Cadastro() {
                 <Check size={30} />
               </span>
 
-              <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#315cf5]">
-                Cadastro recebido
+              <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-[#16a36a]">
+                Cadastro concluído
               </span>
 
               <h2 className="mt-3 mb-2 text-[29px] font-bold leading-[1.2] tracking-[-1px] text-[#111827]">
-                Solicitação de cadastro enviada
+                Sua empresa foi cadastrada!
               </h2>
 
               <p className="mx-auto mb-[25px] text-[14px] leading-[1.7] text-[#64748b]">
-                Suas informações foram recebidas. Aguarde a aprovação do
-                administrador para acessar a plataforma.
+                Sua organização já está registrada no TraceBlock.
+                Agora você pode acessar sua conta e começar a gerenciar
+                seus produtos e cadeias de custódia.
               </p>
-
-              <div className="mb-6 flex items-start gap-[11px] rounded-[9px] border border-[#dbe3ff] bg-[#f7f9ff] p-[14px] text-left text-[#315cf5]">
-                <Clock3 size={19} className="mt-0.5 shrink-0" />
-                <span className="flex flex-col gap-1">
-                  <b className="text-[11px] text-[#273451]">O que acontece agora?</b>
-                  <small className="text-[10px] leading-[1.5] text-[#66728b]">
-                    Nossa equipe validará os dados da organização. Você receberá
-                    um retorno por e-mail.
-                  </small>
-                </span>
-              </div>
 
               <button
               onClick={() => navigate("/login")}
                 className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[8px] bg-[#315cf5] px-4 text-[12px] font-semibold text-white transition hover:bg-[#264bd7]"
               >
                 <ArrowLeft size={16} />
-                Voltar para o login
+                Acessar minha conta
               </button>
             </div>
           ) : (
