@@ -1,13 +1,16 @@
+
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { gerarToken } from "../utils/jwt.js";
 import { verifyPassword } from "../utils/password.js";
+import { gerarToken } from "../utils/jwt.js";
 
 const router = Router();
 
 const loginSchema = z.object({
-  email: z.string().email().transform((email) => email.trim().toLowerCase()),
+  email: z.string().email().transform((email) =>
+    email.trim().toLowerCase()
+  ),
   senha: z.string().min(1),
 });
 
@@ -42,9 +45,16 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    if (!usuario.participante_id) {
+      return res.status(403).json({
+        message: "Usuário não está vinculado a uma organização.",
+      });
+    }
+
+    // Gera o JWT
     const token = gerarToken({
       usuarioId: usuario.id.toString(),
-      participanteId: usuario.participante.id.toString(),
+      participanteId: usuario.participante_id.toString(),
       perfil: usuario.perfil,
     });
 
@@ -56,10 +66,11 @@ router.post("/login", async (req, res) => {
         nome: usuario.nome,
         email: usuario.email,
         perfil: usuario.perfil,
-        participanteId: usuario.participante.id.toString(),
+        participanteId: usuario.participante_id.toString(),
         empresa: usuario.participante.nome,
       },
     });
+
   } catch (error) {
     console.error("Erro no login:", error);
 
