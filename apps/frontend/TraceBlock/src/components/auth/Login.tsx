@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { useNavigate } from "react-router-dom";
+import { login } from "../../services/auth";
 
 
 
@@ -36,14 +37,17 @@ function AuthButton({
   children,
   icon: Icon,
   type = "button",
+  disabled = false,
 }: {
   children: ReactNode;
   icon?: LucideIcon;
   type?: "button" | "submit";
+  disabled?: boolean
 }) {
   return (
     <button
       type={type}
+      disabled={disabled}
       className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-[8px] bg-[#315cf5] px-4 text-[12px] font-semibold text-white shadow-sm transition duration-[180ms] hover:-translate-y-px hover:bg-[#264bd7]"
     >
       {children}
@@ -55,9 +59,33 @@ function AuthButton({
 export default function Login() {
     const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
-  const submitLogin = (e: FormEvent<HTMLFormElement>) => {
+  const submitLogin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    setSubmitError("");
+    setIsSubmitting(true);
+
+    try {
+      await login({
+        email,
+        senha: password
+      })
+
+      navigate("/");
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível realizar o login."
+      );
+    } finally {
+      setIsSubmitting(false)
+    }
   };
 
   return (
@@ -153,8 +181,12 @@ export default function Login() {
 
               <input
                 type="email"
+                name="email"
                 placeholder="nome@empresa.com.br"
                 required
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="h-[46px] rounded-[9px] border border-[#d7dce3] px-[13px] text-[13px] font-normal outline-none transition focus:border-[#315cf5] focus:shadow-[0_0_0_3px_rgba(49,92,245,0.1)]"
               />
             </label>
@@ -167,8 +199,12 @@ export default function Login() {
 
                 <input
                   type={showPassword ? "text" : "password"}
+                  name="senha"
                   placeholder="Digite sua senha"
                   required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="w-full min-w-0 border-0 bg-transparent text-[13px] font-normal outline-none placeholder:text-[#9ca5b3]"
                 />
 
@@ -182,6 +218,14 @@ export default function Login() {
                 </button>
               </div>
             </label>
+
+            {submitError && (
+                  <div
+                  role="start"
+                  className="rounded-[9px] border border-red-200 bg-red-50 px-3 py-3 text-[12px] font-medium text-red-600">
+                    {submitError}
+                  </div>
+            )}
 
             <div className="flex items-center justify-between gap-3">
               <label className="flex items-center gap-2 text-[12px] font-medium text-[#566174]">
@@ -198,8 +242,8 @@ export default function Login() {
               </button>
             </div>
 
-            <AuthButton type="submit" icon={ArrowRight}>
-              Entrar na plataforma
+            <AuthButton type="submit" icon={ArrowRight} disabled={isSubmitting}>
+              {isSubmitting ? "Entrando..." : "Entrar na plataforma"}
             </AuthButton>
           </form>
 
