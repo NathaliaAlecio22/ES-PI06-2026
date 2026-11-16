@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
+import { gerarToken } from "../utils/jwt.js";
 import { verifyPassword } from "../utils/password.js";
 
 const router = Router();
@@ -41,16 +42,21 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // A autenticação por sessão ou JWT será adicionada aqui.
+    const token = gerarToken({
+      usuarioId: usuario.id.toString(),
+      participanteId: usuario.participante.id.toString(),
+      perfil: usuario.perfil,
+    });
 
     return res.status(200).json({
       message: "Login realizado com sucesso!",
+      token,
       usuario: {
         id: usuario.id.toString(),
         nome: usuario.nome,
         email: usuario.email,
         perfil: usuario.perfil,
-        participanteId: usuario.participante_id?.toString(),
+        participanteId: usuario.participante.id.toString(),
         empresa: usuario.participante.nome,
       },
     });
