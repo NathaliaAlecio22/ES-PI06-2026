@@ -1,6 +1,7 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import authRouter from "./routes/auth.routes.js";
 import { participantesRouter } from "./routes/participantes.routes.js";
 
 const app = express();
@@ -16,5 +17,6 @@ app.get("/health", (_req, res) => {
 });
 
 app.use("/api/participantes", participantesRouter);
+app.use("/api", authRouter);
 
 export default app;
