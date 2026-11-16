@@ -14,6 +14,7 @@ export type UsuarioAutenticado = {
 
 export type LoginResponse = {
     message: string;
+    token: string;
     usuario: UsuarioAutenticado;
 }
 
@@ -43,10 +44,11 @@ export async function login(
     );
   }
 
-  if (!result.usuario) {
+  if (!result.token || !result.usuario) {
     throw new Error("Resposta de autenticação inválida.");
   }
 
+  sessionStorage.setItem("traceblock_token", result.token);
   sessionStorage.setItem(
     "traceblock_usuario",
     JSON.stringify(result.usuario),
