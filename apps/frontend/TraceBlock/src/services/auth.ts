@@ -14,7 +14,6 @@ export type UsuarioAutenticado = {
 
 export type LoginResponse = {
     message: string;
-    toke: string;
     usuario: UsuarioAutenticado;
 }
 
@@ -22,7 +21,7 @@ const apiUrl = (
   import.meta.env.VITE_API_URL ?? "http://localhost:3000/api"
 ).replace(/\/$/, "");
 
-export async function Login(
+export async function login(
     credentials: LoginCredentials,
 ): Promise<LoginResponse> {
     const response = await fetch(`${apiUrl}/login`, {
@@ -44,12 +43,10 @@ export async function Login(
     );
   }
 
-  if (!result.token || !result.usuario) {
+  if (!result.usuario) {
     throw new Error("Resposta de autenticação inválida.");
   }
 
-  // Mantém a autenticação durante esta sessão do navegador.
-  sessionStorage.setItem("traceblock_token", result.token);
   sessionStorage.setItem(
     "traceblock_usuario",
     JSON.stringify(result.usuario),
@@ -78,4 +75,3 @@ export function getUsuario(): UsuarioAutenticado | null {
     return null;
   }
 }
-
