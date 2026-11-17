@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 
-import { prisma } from "../lib/prism";
+import { prisma } from "../lib/prisma";
 import { hashPassword } from "../utils/password";
 
 const participantTypes = [

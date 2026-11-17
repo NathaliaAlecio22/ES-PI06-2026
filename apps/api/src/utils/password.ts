@@ -1,21 +1,27 @@
-import { randomBytes, scrypt as scryptCallback } from "node:crypto";
+import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
 
-function deriveKey(password: string, salt: Buffer): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    scryptCallback(password, salt, 64, (error, key) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-
-      resolve(key);
-    });
-  });
-}
+const scrypt = promisify(scryptCallback);
 
 export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const key = await deriveKey(password, salt);
+  const salt = randomBytes(16).toString("hex");
+  const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
 
-  return `scrypt$${salt.toString("hex")}$${key.toString("hex")}`;
+  return `scrypt:${salt}:${derivedKey.toString("hex")}`;
+}
+
+export async function verifyPassword(
+  password: string,
+  storedHash: string,
+): Promise<boolean> {
+  const [algorithm, salt, hash] = storedHash.split(":");
+
+  if (algorithm !== 'scrypt' || !salt ! || !hash ||  !/^[a-f0-9]{128}$/i.test(hash)) {
+    return false;
+  }
+
+  const derivedKey = (await scrypt(password, salt, 64)) as Buffer;
+  const storedKey = Buffer.from(hash, "hex");
+
+  return timingSafeEqual(derivedKey, storedKey);
 }

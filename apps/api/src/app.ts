@@ -8,8 +8,10 @@ import {
   type Batch,
 } from "@provenance/shared";
 
-import { prisma } from "./lib/prism";
+import { prisma } from "./lib/prisma";
 import { participantesRouter } from "./routes/participantes";
+import authRouter from "./routes/auth";
+import userRouter from "./routes/user";
 
 import {
   buildDataHash,
@@ -62,6 +64,8 @@ app.set(
 );
 
 app.use("/api/participantes", participantesRouter);
+app.use("/api/auth", authRouter);
+app.use("/api/auth", userRouter);
 
 function notFound(response: Response): void {
   response.status(404).json({ error: "Recurso não encontrado" });
