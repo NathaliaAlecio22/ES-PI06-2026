@@ -100,3 +100,17 @@ model usuario {
   movimentacao    movimentacao[]
   participante    participante?  @relation(fields: [participante_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
+
+
+model CodigoRecuperacaoSenha {
+  id         BigInt   @id @default(autoincrement())
+  email      String
+  codigoHash String
+  expiresAt  DateTime
+  tentativas Int      @default(0)
+  usado      Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([email])
+  @@map("codigos_recuperacao_senha")
+}
