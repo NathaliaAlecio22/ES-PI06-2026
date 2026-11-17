@@ -28,6 +28,7 @@ router.get("/me", autenticar, async (req, res) => {
         nome: usuario.nome,
         email: usuario.email,
         perfil: usuario.perfil,
+        cargo: usuario.cargo,
         participanteId: usuario.participante_id?.toString(),
         empresa: usuario.participante.nome,
       },
