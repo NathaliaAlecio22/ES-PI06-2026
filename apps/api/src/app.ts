@@ -9,6 +9,7 @@ import {
 } from "@provenance/shared";
 
 import { prisma } from "./lib/prism";
+import { participantesRouter } from "./routes/participantes";
 
 import {
   buildDataHash,
@@ -26,6 +27,30 @@ import { env } from "./config/env.js";
 import { batches, createId, workflows, type StoredWorkflow } from "./store";
 
 export const app = express();
+
+const allowedOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use((request, response, next) => {
+  const origin = request.get("origin");
+
+  if (origin && allowedOrigins.includes(origin)) {
+    response.setHeader("Access-Control-Allow-Origin", origin);
+    response.setHeader("Vary", "Origin");
+    response.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+    response.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  }
+
+  if (request.method === "OPTIONS") {
+    response.sendStatus(origin && !allowedOrigins.includes(origin) ? 403 : 204);
+    return;
+  }
+
+  next();
+});
+
 app.use(express.json());
 
 // JSON has no bigint type: uint256-shaped ids are serialized as decimal strings on every
@@ -35,6 +60,8 @@ app.set(
   "json replacer",
   (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value),
 );
+
+app.use("/api/participantes", participantesRouter);
 
 function notFound(response: Response): void {
   response.status(404).json({ error: "Recurso não encontrado" });
@@ -129,7 +156,7 @@ app.post("/api/workflows", async (request, response) => {
   }
   // The contract refuses zero deliverable hashes (Workflow.sol constructor); a zero hash is
   // invalid data, so it gets a 400 here instead of letting the chain reject the transaction.
-  if (parsed.data.steps.some((step) => /^0x0{64}$/.test(step.specificationHash))) {
+  if (parsed.data.steps.some((step: { specificationHash: string }) => /^0x0{64}$/.test(step.specificationHash))) {
     response.status(400).json({ error: "Hash de especificação da etapa não pode ser zero" });
     return;
   }

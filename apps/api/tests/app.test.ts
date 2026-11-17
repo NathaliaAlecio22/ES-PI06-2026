@@ -109,6 +109,29 @@ beforeEach(() => resetStore());
 // Routes whose happy paths go through the chain are covered by the suite below; this one
 // stays entirely off-chain (every request stops at schema/state/signature validation).
 describe("Provenance API (validação local)", () => {
+  it("rejects invalid public registration data", async () => {
+    const response = await request(app)
+      .post("/api/participantes/cadastro")
+      .send({
+        nomeCompleto: "Ana Silva",
+        email: "ana@example.com",
+        senha: "senha-segura-123",
+        confirmarSenha: "senha-segura-123",
+        telefone: "",
+        nomeOrganizacao: "Empresa Exemplo",
+        cnpj: "00.000.000/0000-00",
+        tipo: "Fabricante",
+        cargo: "Administradora",
+        aceitouTermos: true,
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors[0]).toMatchObject({
+      field: "cnpj",
+      message: "Informe um CNPJ válido.",
+    });
+  });
+
   it("returns health status", async () => {
     const response = await request(app).get("/api/health");
 
