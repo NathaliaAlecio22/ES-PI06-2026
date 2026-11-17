@@ -13,18 +13,26 @@ import { participantesRouter } from "./routes/participantes";
 import authRouter from "./routes/auth";
 import userRouter from "./routes/user";
 
+import { z } from "zod";
+
 import {
   buildDataHash,
   buildTransferDigest,
   createBatch,
   createWorkflow,
+  getBatchState,
   getChainStatus,
+  getConditionBreaches,
   getParticipantRole,
   recoverTransferSigner,
   registerParticipant,
+  reportCondition,
   revertReasonOf,
+  revokeParticipant,
+  assertAddress,
   transferCustody,
 } from "./blockchain";
+
 import { env } from "./config/env.js";
 import { batches, createId, workflows, type StoredWorkflow } from "./store";
 
@@ -210,6 +218,31 @@ app.post("/api/workflows/:workflowId/participants", async (request, response) =>
     await registerParticipant(workflow.workflowAddress, parsed.data.address, parsed.data.role);
     workflow.participants.push(parsed.data);
     response.status(201).json(parsed.data);
+  } catch (error) {
+    chainFailure(response, error);
+  }
+});
+
+app.delete("/api/workflows/:workflowId/participants/:address", async (request, response) => {
+  const workflow = resolveWorkflow(request, response);
+  if (!workflow) {
+    return;
+  }
+
+  let address: string;
+  try {
+    address = assertAddress(request.params.address, "participant");
+  } catch {
+    response.status(400).json({ error: "Endereço do participante inválido" });
+    return;
+  }
+
+  try {
+    await revokeParticipant(workflow.workflowAddress, address);
+    workflow.participants = workflow.participants.filter(
+      (participant:any) => participant.address.toLowerCase() !== address.toLowerCase(),
+    );
+    response.status(204).end();
   } catch (error) {
     chainFailure(response, error);
   }
