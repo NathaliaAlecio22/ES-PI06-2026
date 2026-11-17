@@ -41,8 +41,7 @@ pnpm-debug.log*
 .nyc_output/
 .hardhat_node/
 
-# Database volumes and local uploads
-.postgres-data/
+# Local uploads
 uploads/
 
 # Editors and operating systems

@@ -62,10 +62,10 @@ The chain guarantees a recorded reading can't be silently altered after the fact
 No blockchain nodes are deployed by the team (public testnet is external infrastructure). The team's own infrastructure:
 
 1. **API + indexer** (single process, Node.js/TypeScript, e.g. Express or NestJS + `ethers.js`) — listens for on-chain events, mirrors them into Postgres, serves REST endpoints for workflow CRUD, transfer submission (validates field schema before forwarding on-chain), and batch history queries. Keep indexer and API in one service for this scope; split only if a concrete scaling reason emerges.
-2. **Database** (Postgres, own container) — indexed on-chain history for fast queries, off-chain storage for full documents/certs/sensor logs referenced by on-chain hashes, plus ordinary app data (accounts, sessions, roles for the dashboard UI). Treated as rebuildable from chain history, not authoritative.
-3. **Sensor simulator** (small standalone Node/Python service) — posts mock condition readings on a timer, tied to batch IDs, as if it were an independent IoT device. Kept architecturally separate from the API deliberately, mirroring the real-world trust boundary between a backend and untrusted external devices.
+2. **Database** (Postgres, hosted via [Supabase](https://supabase.com) — originally planned as a self-managed container, see §12) — indexed on-chain history for fast queries, off-chain storage for full documents/certs/sensor logs referenced by on-chain hashes, plus ordinary app data (accounts, sessions, roles for the dashboard UI). Treated as rebuildable from chain history, not authoritative.
+3. **Sensor simulator** (small standalone Node/Python service; dropped for lack of time, see §11) — posts mock condition readings on a timer, tied to batch IDs, as if it were an independent IoT device. Kept architecturally separate from the API deliberately, mirroring the real-world trust boundary between a backend and untrusted external devices.
 4. **Frontend** (React + TypeScript, static build) — not a continuously-running "node"; deploy to static hosting (Vercel/Netlify or served via the same box). Calls the API from the browser.
-5. **ZK prover (stretch goal only)** — isolated service, called via internal HTTP from the API when needed. Kept separate deliberately so slow proof generation never blocks main API responsiveness. Use Circom or Noir.
+5. ~~**ZK prover (stretch goal only)** — isolated service, called via internal HTTP from the API when needed. Kept separate deliberately so slow proof generation never blocks main API responsiveness. Use Circom or Noir.~~ Dropped for lack of time, see §12.
 
 ## 7. Smart contract sketch (illustrative, not final)
 
@@ -127,7 +127,7 @@ Factory pattern: a separate `WorkflowFactory` contract's `createWorkflow(Step[] 
 - FR-08: Accept periodic sensor readings tied to a batch ID.
 - FR-09: Evaluate readings against configurable thresholds; auto-flag on breach.
 - FR-10: Query full custody history for a given batch.
-- FR-11 (stretch): Generate/verify a ZK proof of compliance without revealing underlying data.
+- ~~FR-11 (stretch): Generate/verify a ZK proof of compliance without revealing underlying data.~~ Dropped for lack of time, see §12.
 - FR-12 (stretch): Off-chain storage of high-volume sensor data with on-chain integrity hash anchoring.
 
 ## 9. Work division (5 people, for reference — adjust as needed)
@@ -135,8 +135,8 @@ Factory pattern: a separate `WorkflowFactory` contract's `createWorkflow(Step[] 
 1. **Smart contracts / workflow engine** — generic step/state-machine contract, signature verification, factory pattern.
 2. **Backend / indexer / API** — event listener + Postgres mirror, REST API, field-schema validation before on-chain submission, auth.
 3. **Frontend: enterprise/admin side** — workflow builder UI (define steps, roles, required fields per step).
-4. **Frontend: operator + consumer/audit side, + sensor simulator** — dynamic transfer submission UI rendered from workflow schema, batch history/lookup UI, sensor simulator service.
-5. **Infra/DevOps + integration testing + ZK stretch** — Hardhat/deployment scripts, CI, environment consistency, end-to-end testing across contract/backend/frontend, isolated ZK prover R&D.
+4. **Frontend: operator + consumer/audit side, + sensor simulator** — dynamic transfer submission UI rendered from workflow schema, batch history/lookup UI, sensor simulator service (dropped, see §11).
+5. **Infra/DevOps + integration testing + ZK stretch** — Hardhat/deployment scripts, CI, environment consistency, end-to-end testing across contract/backend/frontend; dedicated `infra/` work dropped in favor of Supabase and isolated ZK prover R&D dropped for lack of time (see §12).
 
 Critical sequencing note: Persons 1 and 2 must agree on the workflow-definition data shape before Persons 3 and 4 build UI against it — this should be the first cross-team conversation.
 
@@ -146,3 +146,30 @@ Critical sequencing note: Persons 1 and 2 must agree on the workflow-definition 
 - Sensor data integrity beyond "hasn't been altered since recorded" is not guaranteed (oracle problem) — MVP only raises this via multi-source agreement as a stretch, doesn't solve it.
 - No versioning strategy yet for changing a workflow's step shape after batches are already in flight — redeployment required, migration story undefined.
 - Single local Hardhat node used in dev does not itself demonstrate distributed consensus; only the testnet deployment does.
+
+## 11. Addendum: sensor simulator dropped for lack of time
+
+The standalone sensor simulator described in §6.3 and assigned in §9's work division was **not
+implemented** — there was no time left in the project schedule to build it as its own process.
+`apps/sensor-simulator/` remains a planning stub only; this is a scope cut, not a design change.
+
+Condition/sensor support itself is already implemented where it matters most: the `Workflow`
+contract's `reportCondition` function (§7) and the corresponding backend functions in
+`apps/api/src/blockchain.ts` (`reportCondition`, `getConditionBreaches`, and the
+`ConditionReported` event listener) exist and work end-to-end against real contracts. What's
+missing is only the external-device process itself and a REST route in `apps/api/src/app.ts`
+to accept readings and forward them on-chain — see [`backend-api.md`](backend-api.md) for
+current status.
+
+## 12. Addendum: infra/ dropped for Supabase, and ZK dropped for lack of time
+
+The `infra/` directory described in §6 item 2 (self-managed Postgres container/deployment
+definitions) and its dedicated git branch were **dropped**. The project now uses
+[Supabase](https://supabase.com) as a hosted Postgres/backend-as-a-service provider instead of
+a team-operated Docker Compose stack. This is an infrastructure/hosting change only — the
+on-chain/off-chain data split in §3.3 and the "rebuildable mirror" model are unaffected; the
+database engine is still Postgres, just provisioned by Supabase rather than a local container.
+
+The zero-knowledge prover (§6 item 5, FR-11 in §8, work item 5 in §9) was **dropped for lack of
+time** and was never implemented. `zk/` remains an empty placeholder directory with no Circom
+or Noir research. Treat ZK as fully out of scope for this project, not merely a stretch goal.

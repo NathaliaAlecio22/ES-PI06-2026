@@ -141,3 +141,30 @@ Esta é a primeira versão técnica do backend. O armazenamento atual é tempor�
 3. Integração com contratos Solidity e assinaturas digitais.
 4. Indexação de eventos da blockchain.
 5. Recebimento e avaliação de leituras do simulador de sensores.
+
+## Addendum: simulador de sensores descartado por falta de tempo
+
+O serviço standalone `apps/sensor-simulator/` (item 5 acima e item 3 do trabalho dividido em
+[`docs/context.md`](context.md) §9) **não foi implementado** — não houve tempo hábil no
+cronograma do projeto para construí-lo como processo independente. O diretório
+[`apps/sensor-simulator/`](../apps/sensor-simulator/README.md) permanece apenas como stub de
+planejamento.
+
+Isso não significa que o suporte a leituras de sensor esteja ausente: a camada de suporte já
+está implementada no backend e nos contratos. `src/blockchain.ts` já expõe `reportCondition`
+(envia a leitura ao contrato), `getConditionBreaches` (lê violações de limiar já registradas) e
+o listener do evento `ConditionReported`; o contrato `Workflow.reportCondition` (ver
+[`contracts/README.md`](../contracts/README.md)) registra a leitura e compromete o lote
+automaticamente em caso de violação de limiar. O que falta é apenas (a) o processo externo que
+simula o dispositivo de IoT e (b) a rota HTTP correspondente em `app.ts` para encaminhar
+leituras recebidas via REST até `reportCondition` — a integração com a blockchain em si já
+existe e pode ser exercitada diretamente contra `src/blockchain.ts`.
+
+## Addendum: PostgreSQL agora via Supabase
+
+A pasta `infra/` (definições planejadas de Docker/deploy para um container Postgres
+autogerenciado) e sua branch dedicada foram descartadas. O projeto passa a usar
+[Supabase](https://supabase.com) como provedor hospedado de Postgres/backend-as-a-service.
+`DATABASE_URL` em `apps/api/.env.example` deve apontar para a string de conexão fornecida pelo
+projeto Supabase em vez de um Postgres local via Docker Compose — o restante do plano de
+persistência (item 1 de "Próximas evoluções" acima) não muda, apenas quem hospeda o banco.

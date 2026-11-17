@@ -22,7 +22,7 @@ The MVP is a generic product-provenance platform where each enterprise deploys a
 
 ### 2.2 Stretch Goals
 
-- Zero-knowledge compliance proof generation and verification.
+- ~~Zero-knowledge compliance proof generation and verification.~~ Dropped for lack of time; see §11.
 - High-volume sensor data stored off-chain and hash-anchored on-chain.
 - Multi-sensor agreement or outlier rejection.
 
@@ -32,7 +32,7 @@ The MVP is a generic product-provenance platform where each enterprise deploys a
 - A solution to the sensor oracle problem.
 - In-place versioning or migration of workflows with active batches.
 - Team-operated public blockchain nodes.
-- Production-grade ZK support in the MVP.
+- ZK support of any kind — dropped for lack of time; see §11.
 
 ## 3. Actors
 
@@ -190,9 +190,9 @@ Acceptance criteria:
 - Required fields are generated from the selected step specification.
 - History distinguishes transfers, participant changes, readings, and breaches.
 
-### FR-17: ZK Compliance Proof (Stretch)
+### FR-17: ZK Compliance Proof (Stretch) — Dropped
 
-The system may generate and verify a proof of compliance without revealing the underlying values.
+~~The system may generate and verify a proof of compliance without revealing the underlying values.~~ Dropped for lack of time; see §11.
 
 ### FR-18: Sensor Log Anchoring (Stretch)
 
@@ -227,7 +227,7 @@ On-chain storage and computation shall be limited to state and rules required fo
 
 ### NFR-06: Portability
 
-Applications shall support local development through documented environment variables and containerized PostgreSQL. Blockchain integration shall target Ethereum-compatible JSON-RPC.
+Applications shall support local development through documented environment variables and a hosted Supabase PostgreSQL instance (previously a containerized local PostgreSQL, see §11). Blockchain integration shall target Ethereum-compatible JSON-RPC.
 
 ### NFR-07: Testability
 
@@ -273,8 +273,8 @@ Services shall produce structured logs with correlation identifiers and blockcha
 
 - Node.js and package manager versions shall be pinned when implementation begins.
 - Hardhat local network is the default EVM environment.
-- PostgreSQL runs as a separate local service/container.
-- API/indexer, frontend, and sensor simulator run as separate processes.
+- PostgreSQL is provisioned and hosted via Supabase rather than a local service/container (see §11).
+- API/indexer and frontend run as separate processes.
 
 ### Demonstration
 
@@ -301,3 +301,29 @@ Services shall produce structured logs with correlation identifiers and blockcha
 - Sensor authorization and threshold configuration model.
 - API framework, database migration tool, package manager, and monorepo tooling.
 - Confirmation and chain-reorganization policy for the indexer.
+
+## 10. Addendum: sensor simulator dropped for lack of time
+
+The standalone sensor simulator referenced throughout this document (FR-10's "sensor
+integration boundary", §7's "sensor simulator" process, §2.1's "independent simulated sensor
+readings") was **not implemented** — there wasn't time left in the project schedule to build it
+as its own process. `apps/sensor-simulator/` remains a planning stub only.
+
+This does not mean condition/sensor support is unimplemented overall: FR-10 and FR-11's
+underlying contract and backend logic already exist. The `Workflow` contract's
+`reportCondition` function and `apps/api/src/blockchain.ts`'s `reportCondition`/
+`getConditionBreaches` functions (plus the `ConditionReported` event listener) are implemented
+and usable. What's missing is only the standalone simulator process itself and the matching
+REST route to forward submitted readings to it from `apps/api/src/app.ts`.
+
+## 11. Addendum: infra/ dropped for Supabase, and ZK dropped for lack of time
+
+The `infra/` directory and its dedicated git branch, which held planned Docker/deployment
+definitions for a self-hosted PostgreSQL container (§7's "PostgreSQL runs as a separate local
+service/container"), were **dropped**. The project now uses [Supabase](https://supabase.com) as
+a hosted Postgres/backend-as-a-service provider instead, so NFR-06 and §7's local-development
+requirements are satisfied by a Supabase instance rather than team-managed containers.
+
+The zero-knowledge stretch goal (FR-17, §2.2, §2.3) was **dropped for lack of time** and was
+never implemented; `zk/` remains an empty placeholder directory. No proof generation or
+verification exists anywhere in this project.

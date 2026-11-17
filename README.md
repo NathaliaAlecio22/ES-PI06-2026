@@ -17,16 +17,29 @@ The repository contains the project documentation and the initial backend API fo
 apps/
   api/                 API and blockchain event indexer
   frontend/            React web application
-  sensor-simulator/    Independent simulated sensor service
+  sensor-simulator/    Independent simulated sensor service (dropped, see note below)
 contracts/             Solidity contracts and deployment tooling
 packages/
   shared/              Cross-application types and schemas
-infra/                 Local and deployment infrastructure definitions
 docs/                  Project context and specifications
 tests/
   integration/         Cross-component integration tests
   e2e/                 End-to-end tests
-zk/                    Optional zero-knowledge proof research
+zk/                    Optional zero-knowledge proof research (dropped, see note below)
 ```
 
 Each component directory contains a README describing its intended responsibility. Toolchain manifests and source files should be added only when implementation begins and the team has agreed on the shared workflow-definition shape.
+
+> **Note:** the standalone sensor simulator (`apps/sensor-simulator/`) was dropped for lack of
+> time and was never implemented as its own process. Sensor/condition support itself is not
+> missing, though — it's already implemented in the contracts and backend (see
+> [`apps/sensor-simulator/README.md`](apps/sensor-simulator/README.md) and
+> [`docs/backend-api.md`](docs/backend-api.md)).
+
+> **Note:** the `infra/` directory and its dedicated branch were dropped. The project now uses
+> [Supabase](https://supabase.com) as a hosted Postgres/backend-as-a-service provider instead of
+> a self-hosted, Docker-composed PostgreSQL container, so the planned container/deployment
+> definitions are no longer needed.
+
+> **Note:** the zero-knowledge stretch goal (`zk/`) was dropped for lack of time. See
+> [`zk/README.md`](zk/README.md) for details.
