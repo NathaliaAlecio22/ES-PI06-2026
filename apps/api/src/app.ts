@@ -8,6 +8,8 @@ import {
   type Batch,
 } from "@provenance/shared";
 
+import { prisma } from "./lib/prism";
+
 import {
   buildDataHash,
   buildTransferDigest,
@@ -96,6 +98,26 @@ app.get("/api/chain/status", async (_request, response) => {
     response.json(await getChainStatus());
   } catch (error) {
     chainFailure(response, error);
+  }
+});
+
+app.get("/api/db-health", async (_request, response) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+
+    response.status(200).json({
+      status: "ok",
+      database: "connected",
+      message: "Conexão com PostgreSQL estabelecida!",
+    });
+  } catch (error) {
+    console.error("Erro ao conectar ao banco:", error);
+
+    response.status(503).json({
+      status: "error",
+      database: "disconnected",
+      message: "Não foi possível conectar ao PostgreSQL.",
+    });
   }
 });
 
