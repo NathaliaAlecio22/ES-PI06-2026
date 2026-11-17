@@ -9,6 +9,7 @@ export type UsuarioAutenticado = {
   nome: string;
   email: string;
   perfil: string;
+  cargo: string | null;
   participanteId: string;
   empresa: string;
 };
@@ -23,10 +24,20 @@ const apiUrl = (
   import.meta.env.VITE_API_URL ?? "http://localhost:3000/api"
 ).replace(/\/$/, "");
 
+async function readJson<T>(response: Response): Promise<T> {
+  if (!response.headers.get("content-type")?.includes("application/json")) {
+    throw new Error(
+      `A API respondeu HTTP ${response.status} sem JSON. Verifique se o backend está em execução e se a rota existe.`,
+    );
+  }
+
+  return response.json() as Promise<T>;
+}
+
 export async function login(
   credentials: LoginCredentials
 ): Promise<LoginResponse> {
-  const response = await fetch(`${apiUrl}/login`, {
+  const response = await fetch(`${apiUrl}/auth/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -37,7 +48,9 @@ export async function login(
     }),
   });
 
-  const result = await response.json();
+  const result = await readJson<Partial<LoginResponse> & { message?: string }>(
+    response,
+  );
 
   if (!response.ok) {
     throw new Error(
@@ -105,14 +118,14 @@ export async function apiFetch(
 
 // Consulta o backend para confirmar se o token ainda é válido
 export async function buscarUsuarioAutenticado(): Promise<UsuarioAutenticado> {
-  const response = await apiFetch("/me");
+  const response = await apiFetch("/auth/me");
 
   if (!response.ok) {
     logout();
     throw new Error("Sessão inválida ou expirada.");
   }
 
-  const result = await response.json();
+  const result = await readJson<{ usuario?: UsuarioAutenticado }>(response);
 
   if (!result.usuario) {
     logout();
@@ -125,4 +138,72 @@ export async function buscarUsuarioAutenticado(): Promise<UsuarioAutenticado> {
   );
 
   return result.usuario as UsuarioAutenticado;
+}
+
+
+export async function solicitarCodigoRecuperacao(email: string) {
+  const response = await fetch(`${apiUrl}/auth/forgot-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
+  });
+
+  const result = await readJson<{ message: string }>(response);
+
+  if (!response.ok) {
+    throw new Error(result.message || "Erro ao enviar código.");
+  }
+
+  return result;
+}
+
+export async function verificarCodigoRecuperacao(
+  email: string,
+  codigo: string,
+) {
+  const response = await fetch(`${apiUrl}/auth/verify-reset-code`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, codigo }),
+  });
+
+  const result = await readJson<{ message: string; valid: boolean }>(response);
+
+  if (!response.ok) {
+    throw new Error(result.message || "Código inválido.");
+  }
+
+  return result;
+}
+
+export async function redefinirSenha(
+  email: string,
+  codigo: string,
+  senha: string,
+  confirmarSenha: string,
+) {
+  const response = await fetch(`${apiUrl}/auth/reset-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email,
+      codigo,
+      senha,
+      confirmarSenha,
+    }),
+  });
+
+  const result = await readJson<{ message: string }>(response);
+
+  if (!response.ok) {
+    throw new Error(result.message || "Erro ao redefinir senha.");
+  }
+
+  return result;
 }

@@ -16,6 +16,12 @@ import { useNavigate } from "react-router-dom";
 
 type Step = 1 | 2 | 3 | 4;
 
+import {
+  solicitarCodigoRecuperacao,
+  verificarCodigoRecuperacao,
+  redefinirSenha,
+} from "../../services/auth";
+
 
 
 export default function ForgotPasswor(){
@@ -32,6 +38,11 @@ export default function ForgotPasswor(){
 
   const [error, setError] = useState("");
 
+  const [isLoading, setIsLoading] = useState(false);
+  const [info, setInfo] = useState("");
+
+  
+
   const passwordStrength =
     password.length >= 12
       ? 3
@@ -41,58 +52,116 @@ export default function ForgotPasswor(){
           ? 1
           : 0;
 
-  const handleEmailSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError("");
+const handleEmailSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
 
-    // FUTURO BACKEND:
-    // Enviar o email para a API solicitar o código de recuperação.
+  setError("");
+  setInfo("");
+  setIsLoading(true);
+
+  try {
+    await solicitarCodigoRecuperacao(email.trim().toLowerCase());
 
     setStep(2);
-  };
+  } catch (error) {
+    setError(
+      error instanceof Error
+        ? error.message
+        : "Não foi possível enviar o código.",
+    );
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  const handleCodeSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError("");
+const handleCodeSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
 
-    if (code.length !== 6) {
-      setError("Informe o código de 6 dígitos.");
-      return;
-    }
+  setError("");
+  setInfo("");
 
-    // FUTURO BACKEND:
-    // Validar o código enviado por email.
+  if (code.length !== 6) {
+    setError("Informe o código de 6 dígitos.");
+    return;
+  }
+
+  setIsLoading(true);
+
+  try {
+    await verificarCodigoRecuperacao(
+      email.trim().toLowerCase(),
+      code,
+    );
 
     setStep(3);
-  };
+  } catch (error) {
+    setError(
+      error instanceof Error
+        ? error.message
+        : "Não foi possível validar o código.",
+    );
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  const handlePasswordSubmit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError("");
+const handlePasswordSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  e.preventDefault();
 
-    if (password.length < 8) {
-      setError("A senha deve possuir pelo menos 8 caracteres.");
-      return;
-    }
+  setError("");
 
-    if (password !== confirmPassword) {
-      setError("As senhas não coincidem.");
-      return;
-    }
+  if (password.length < 8) {
+    setError("A senha deve possuir pelo menos 8 caracteres.");
+    return;
+  }
 
-    // FUTURO BACKEND:
-    // Enviar código, email e nova senha para a API.
-    // A API deverá validar o código e atualizar a senha.
+  if (password !== confirmPassword) {
+    setError("As senhas não coincidem.");
+    return;
+  }
+
+  setIsLoading(true);
+
+  try {
+    await redefinirSenha(
+      email.trim().toLowerCase(),
+      code,
+      password,
+      confirmPassword,
+    );
 
     setStep(4);
-  };
+  } catch (error) {
+    setError(
+      error instanceof Error
+        ? error.message
+        : "Não foi possível redefinir sua senha.",
+    );
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  const handleResendCode = () => {
-    setError("");
+const handleResendCode = async () => {
+  setError("");
+  setInfo("");
+  setIsLoading(true);
 
-    // FUTURO BACKEND:
-    // Solicitar um novo código para o email informado.
-  };
+  try {
+    await solicitarCodigoRecuperacao(email.trim().toLowerCase());
+
+    setCode("");
+    setInfo("Se o e-mail estiver cadastrado, um novo código será enviado.");
+  } catch (error) {
+    setError(
+      error instanceof Error
+        ? error.message
+        : "Não foi possível reenviar o código.",
+    );
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   return (
     <main className="grid min-h-screen grid-cols-[minmax(480px,0.92fr)_minmax(580px,1.08fr)] bg-white max-[900px]:grid-cols-1">
@@ -207,6 +276,7 @@ export default function ForgotPasswor(){
               type="button"
               onClick={() => {
                 setError("");
+                setInfo("");
 
                 if (step === 1) {
                   navigate('/login')
@@ -292,11 +362,12 @@ export default function ForgotPasswor(){
                 )}
 
                 <button
+                disabled={isLoading}
                   type="submit"
                   className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[9px] bg-[#315cf5] px-4 text-[12px] font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-[#264bd7]"
                 >
-                  Enviar código
-                  <ArrowRight size={16} />
+                  {isLoading ? "Enviando..." : "Enviar código"}
+                  {!isLoading && <ArrowRight size={16} />}
                 </button>
               </form>
 
@@ -368,12 +439,19 @@ export default function ForgotPasswor(){
                   <p className="text-[12px] text-red-600">{error}</p>
                 )}
 
+                {info && (
+                    <p className="text-center text-[12px] text-green-600">
+                      {info}
+                    </p>
+                  )}
+
                 <button
+                disabled={isLoading}
                   type="submit"
                   className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[9px] bg-[#315cf5] px-4 text-[12px] font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-[#264bd7]"
                 >
-                  Verificar código
-                  <ArrowRight size={16} />
+                  {isLoading ? "Verificando..." : "Verificar código"}
+                  {!isLoading && <ArrowRight size={16} />}
                 </button>
               </form>
 
@@ -383,12 +461,13 @@ export default function ForgotPasswor(){
                 </p>
 
                 <button
+                  disabled={isLoading}
                   type="button"
                   onClick={handleResendCode}
                   className="mt-2 inline-flex items-center gap-2 text-[12px] font-semibold text-[#315cf5] hover:text-[#264bd7]"
                 >
                   <RefreshCw size={14} />
-                  Reenviar código
+                  {isLoading ? "Enviando..." : "Reenviar código"}
                 </button>
               </div>
 
@@ -530,11 +609,12 @@ export default function ForgotPasswor(){
                 )}
 
                 <button
+                disabled={isLoading}
                   type="submit"
                   className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[9px] bg-[#315cf5] px-4 text-[12px] font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-[#264bd7]"
                 >
-                  Redefinir senha
-                  <ArrowRight size={16} />
+                  {isLoading ? "Redefinindo..." : "Redefinir senha"}
+                  {!isLoading && <ArrowRight size={16} />}
                 </button>
               </form>
 

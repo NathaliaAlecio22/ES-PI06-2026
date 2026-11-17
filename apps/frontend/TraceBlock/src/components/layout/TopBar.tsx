@@ -14,11 +14,12 @@ import {
 } from "lucide-react";
 
 import type { Page } from "./sidebar.config";
-import { useNavigate } from "react-router-dom";
+import { getUsuario } from "../../services/auth";
 
 interface TopbarProps {
   page: Page;
   openMenu: () => void;
+  onLogout: () => void;
 }
 
 const pageLabels: Record<Page, string> = {
@@ -35,10 +36,10 @@ const pageLabels: Record<Page, string> = {
   settings: "Configurações",
 };
 
-export default function Topbar({ page, openMenu }: TopbarProps) {
+export default function Topbar({ page, openMenu, onLogout }: TopbarProps) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const navigate = useNavigate();
+  const usuario = getUsuario();
 
   const handleProfile = () => {
     setUserMenuOpen(false);
@@ -52,7 +53,7 @@ export default function Topbar({ page, openMenu }: TopbarProps) {
 
   const handleLogout = () => {
     setUserMenuOpen(false);
-    navigate('/login');
+    onLogout();
   }
 
   return (
@@ -184,16 +185,23 @@ export default function Topbar({ page, openMenu }: TopbarProps) {
             }`}>
               <div className="hidden flex-col items-end sm:flex">
                 <span className="text-[11px] font-semibold text-slate-800">
-                  Mariana Rocha
+                  {usuario?.nome ?? "Usuário"}
                 </span>
 
                 <span className="text-[9px] text-slate-400">
-                  Gerente de operações
+                  {usuario?.cargo
+                  ? usuario.cargo.charAt(0).toUpperCase() + usuario.cargo.slice(1)
+                  : "Cargo não informado"}
                 </span>
               </div>
 
               <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#e8edff] text-[10px] font-bold text-[#315cf5]">
-                MR
+                {usuario?.nome
+                  ?.split(/\s+/)
+                  .slice(0, 2)
+                  .map((parte) => parte[0])
+                  .join("")
+                  .toUpperCase() ?? "US"}
               </div>
 
               <ChevronDown size={14} className={`hidden text-slate-400 transition-transform sm:block ${
@@ -206,11 +214,13 @@ export default function Topbar({ page, openMenu }: TopbarProps) {
               <div className="absolute right-0 top-12 z-50 w-[230px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
                 <div className="border-b border-slate-100 px-4 py-3">
                   <p className="text-sm font-semibold text-slate-800">
-                    Marina Rocha
+                    {usuario?.nome ?? "Usuário"}
                   </p>
 
                   <p className="mt-1 text-[11px] text-slate-400">
-                    Gerente de operações
+                    {usuario?.cargo
+                    ? usuario.cargo.charAt(0).toUpperCase() + usuario.cargo.slice(1)
+                    : "Cargo não informado"}
                   </p>
                 </div>
 

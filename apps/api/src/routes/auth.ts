@@ -5,13 +5,275 @@ import { prisma } from "../lib/prisma";
 import { verifyPassword } from "../utils/password.js";
 import { gerarToken, verificarToken } from "../utils/jwt.js";
 
+import { createHmac, randomInt } from "node:crypto";
+import { enviarCodigoRecuperacao } from "../service/email.service";
+import { hashPassword } from "../utils/password.js";
+
 const router = Router();
+
+function gerarCodigo(): string {
+    return randomInt(100000, 1000000).toString();
+}
+
+function gerarHashCodigo(codigo: string): string {
+  const secret = process.env.RESET_CODE_SECRET;
+
+  if (!secret) {
+    throw new Error("RESET_CODE_SECRET não configurado.");
+  }
+
+  return createHmac("sha256", secret)
+    .update(codigo)
+    .digest("hex");
+}
+
 
 const loginSchema = z.object({
   email: z.string().email().transform((email) =>
     email.trim().toLowerCase()
   ),
   senha: z.string().min(1),
+});
+
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const schema = z.object({
+      email: z.string().email().transform((value) => value.trim().toLowerCase()),
+    });
+
+    const parsed = schema.safeParse(req.body);
+
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Informe um e-mail válido.",
+      });
+    }
+
+    const { email } = parsed.data;
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { email },
+    });
+
+    // Não revela se o e-mail está cadastrado.
+    if (!usuario) {
+      return res.status(200).json({
+        message: "Se o e-mail estiver cadastrado, você receberá um código.",
+      });
+    }
+
+    const codigo = gerarCodigo();
+    const codigoHash = gerarHashCodigo(codigo);
+
+    // Invalida códigos anteriores desse e-mail.
+    await prisma.codigoRecuperacaoSenha.updateMany({
+      where: {
+        email,
+        usado: false,
+      },
+      data: {
+        usado: true,
+      },
+    });
+
+    await prisma.codigoRecuperacaoSenha.create({
+      data: {
+        email,
+        codigoHash,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    });
+
+    try {
+      await enviarCodigoRecuperacao(email, codigo);
+    } catch (error) {
+      await prisma.codigoRecuperacaoSenha.updateMany({
+        where: {
+          email,
+          codigoHash,
+          usado: false,
+        },
+        data: {
+          usado: true,
+        },
+      });
+
+      throw error;
+    }
+
+    return res.status(200).json({
+      message: "Se o e-mail estiver cadastrado, você receberá um código.",
+    });
+  } catch (error) {
+    console.error("Erro ao solicitar recuperação:", error);
+
+    return res.status(500).json({
+      message: "Não foi possível enviar o código. Tente novamente.",
+    });
+  }
+});
+
+router.post("/verify-reset-code", async (req, res) => {
+  try {
+    const schema = z.object({
+      email: z.string().email(),
+      codigo: z.string().regex(/^\d{6}$/, "Código inválido."),
+    });
+
+    const parsed = schema.safeParse(req.body);
+
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Informe o e-mail e o código de 6 dígitos.",
+      });
+    }
+
+    const email = parsed.data.email.trim().toLowerCase();
+    const codigoHash = gerarHashCodigo(parsed.data.codigo);
+
+    const registro = await prisma.codigoRecuperacaoSenha.findFirst({
+      where: {
+        email,
+        usado: false,
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (!registro || registro.tentativas >= 5) {
+      return res.status(400).json({
+        message: "Código inválido ou expirado.",
+      });
+    }
+
+    if (registro.codigoHash !== codigoHash) {
+      await prisma.codigoRecuperacaoSenha.update({
+        where: { id: registro.id },
+        data: {
+          tentativas: {
+            increment: 1,
+          },
+        },
+      });
+
+      return res.status(400).json({
+        message: "Código incorreto.",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Código validado com sucesso.",
+      valid: true,
+    });
+  } catch (error) {
+    console.error("Erro ao validar código:", error);
+
+    return res.status(500).json({
+      message: "Erro ao validar o código.",
+    });
+  }
+});
+
+router.post("/reset-password", async (req, res) => {
+  try {
+    const schema = z.object({
+      email: z.string().email(),
+      codigo: z.string().regex(/^\d{6}$/),
+      senha: z.string().min(8).max(128),
+      confirmarSenha: z.string(),
+    }).refine((data) => data.senha === data.confirmarSenha, {
+      path: ["confirmarSenha"],
+      message: "As senhas não coincidem.",
+    });
+
+    const parsed = schema.safeParse(req.body);
+
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: "Dados inválidos. Verifique as senhas informadas.",
+      });
+    }
+
+    const { senha, email: emailInformado, codigo } = parsed.data;
+    const email = emailInformado.trim().toLowerCase();
+    const codigoHash = gerarHashCodigo(codigo);
+
+    const registro = await prisma.codigoRecuperacaoSenha.findFirst({
+      where: {
+        email,
+        codigoHash,
+        usado: false,
+        tentativas: {
+          lt: 5,
+        },
+        expiresAt: {
+          gt: new Date(),
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    if (!registro) {
+      return res.status(400).json({
+        message: "Código inválido ou expirado. Solicite um novo código.",
+      });
+    }
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { email },
+    });
+
+    if (!usuario) {
+      return res.status(400).json({
+        message: "Não foi possível recuperar esta conta.",
+      });
+    }
+
+    const senhaHash = await hashPassword(senha);
+
+    await prisma.$transaction([
+      prisma.usuario.update({
+        where: { id: usuario.id },
+        data: {
+          senha_hash: senhaHash,
+        },
+      }),
+
+      prisma.codigoRecuperacaoSenha.update({
+        where: { id: registro.id },
+        data: {
+          usado: true,
+        },
+      }),
+
+      // Invalida também outros códigos ainda ativos.
+      prisma.codigoRecuperacaoSenha.updateMany({
+        where: {
+          email,
+          usado: false,
+        },
+        data: {
+          usado: true,
+        },
+      }),
+    ]);
+
+    return res.status(200).json({
+      message: "Senha redefinida com sucesso.",
+    });
+  } catch (error) {
+    console.error("Erro ao redefinir senha:", error);
+
+    return res.status(500).json({
+      message: "Não foi possível redefinir sua senha.",
+    });
+  }
 });
 
 router.get("/me", async (req, res) => {

@@ -9,6 +9,7 @@ import {
 
 import Brand from "./Brand";
 import { navItems, type Page } from "./sidebar.config";
+import { getUsuario } from "../../services/auth";
 
 interface SidebarProps {
   page: Page;
@@ -55,6 +56,8 @@ export default function Sidebar({
       </button>
     );
   };
+
+  const usuario = getUsuario();
 
   return (
     <>
@@ -165,11 +168,13 @@ export default function Sidebar({
 
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
               <span className="truncate text-[10px] font-semibold text-[#e8ebef]">
-                Marina Rocha
+                {usuario?.nome}
               </span>
 
               <span className="truncate text-[8px] text-[#727e90]">
-                Gerente de operações
+                {usuario?.cargo
+                ? usuario.cargo.charAt(0).toUpperCase() + usuario.cargo.slice(1)
+                : "Cargo não informado"}
               </span>
             </div>
 
