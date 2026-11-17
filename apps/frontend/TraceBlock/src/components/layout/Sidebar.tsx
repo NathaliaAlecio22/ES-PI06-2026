@@ -58,6 +58,14 @@ export default function Sidebar({
   };
 
   const usuario = getUsuario();
+  const iniciaisOrganizacao =
+    usuario?.empresa
+      ?.split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((parte) => parte[0])
+      .join("")
+      .toUpperCase() ?? "OR";
 
   return (
     <>
@@ -94,7 +102,7 @@ export default function Sidebar({
           className="mx-px mb-[22px] mt-[26px] flex items-center gap-[9px] rounded-[9px] border border-[#293244] bg-[#182132] p-2.5 text-left transition-colors hover:bg-[#202c40]"
         >
           <span className="grid h-[29px] w-[29px] shrink-0 place-items-center rounded-[7px] bg-[#2d55df] text-[10px] font-bold text-white">
-            AM
+            {iniciaisOrganizacao}
           </span>
 
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -103,7 +111,7 @@ export default function Sidebar({
             </span>
 
             <span className="truncate text-[10px] font-semibold text-[#e6e9ef]">
-              AgroMarket Brasil
+              {usuario?.empresa || "Organização"}
             </span>
           </span>
 
