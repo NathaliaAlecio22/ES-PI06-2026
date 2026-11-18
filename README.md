@@ -10,6 +10,7 @@ The repository contains the project documentation and the initial backend API fo
 - [`docs/requirements.md`](docs/requirements.md): scoped and testable project requirements.
 - [`docs/architecture.md`](docs/architecture.md): component boundaries and data ownership.
 - [`docs/backend-api.md`](docs/backend-api.md): implemented backend API, endpoints, setup, and next steps.
+- [`docs/poc-checklist.md`](docs/poc-checklist.md): PoC checklist — what's done vs. still needed, verified against the code.
 
 ## Repository Structure
 
