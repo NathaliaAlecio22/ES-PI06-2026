@@ -10,6 +10,8 @@ import ReportsPage from "./reports/page";
 import TransfersPage from "./transfer/page";
 import SensorsPage from "./sensor/page";
 import CustodyPage from "./custody/page";
+import AdminPage from "./admin/page";
+import OrganizationManagement from "./organization/page";
 
 
 export function HomePage() {
@@ -49,6 +51,14 @@ export function HomePage() {
 
             {page === 'custody' && (
                 <CustodyPage />
+            )}
+
+            {page === 'admin' && (
+                <AdminPage />
+            )}
+
+            {page === 'organization' && (
+                <OrganizationManagement />
             )}
         </AppLayout>
     )

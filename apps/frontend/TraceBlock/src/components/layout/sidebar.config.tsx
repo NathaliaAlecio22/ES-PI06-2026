@@ -9,6 +9,7 @@ import {
   Link2,
   PackageOpen,
   ShieldCheck,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ export type Page =
   | "blockchain"
   | "sensors"
   | "reports"
+  | "organization"
   | "admin"
   | "support"
   | "settings";
@@ -38,5 +40,16 @@ export const navItems: {
   { id: "blockchain", label: "Histórico Blockchain", icon: Blocks },
   { id: "sensors", label: "Condições e sensores", icon: Gauge },
   { id: "reports", label: "Relatórios", icon: FileBarChart },
-  { id: "admin", label: "Administração", icon: ShieldCheck },
+
+  {
+    id: "organization",
+    label: "Gestão da organização",
+    icon: Users,
+  },
+
+  {
+    id: "admin",
+    label: "Administração",
+    icon: ShieldCheck,
+  },
 ];

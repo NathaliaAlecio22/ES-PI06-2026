@@ -31,6 +31,7 @@ const pageLabels: Record<Page, string> = {
   blockchain: "Histórico Blockchain",
   sensors: "Condições e sensores",
   reports: "Relatórios",
+  organization: "Gestão da organização",
   admin: "Administração",
   support: "Ajuda e suporte",
   settings: "Configurações",
