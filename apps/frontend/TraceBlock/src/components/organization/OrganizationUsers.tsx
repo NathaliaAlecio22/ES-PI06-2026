@@ -1,6 +1,6 @@
 
 import {
-  MoreHorizontal,
+  Ban,
   Pencil,
   Power,
   UserRound,
@@ -13,8 +13,10 @@ import type {
 
 interface OrganizationUsersProps {
   users: OrganizationUser[];
+  canManageUsers: boolean;
   onEdit: (user: OrganizationUser) => void;
-  onToggleStatus: (id: string) => void;
+  onToggleStatus: (user: OrganizationUser) => void;
+  onCancelInvitation: (user: OrganizationUser) => void;
 }
 
 const roleLabels: Record<OrganizationUserRole, string> = {
@@ -25,8 +27,10 @@ const roleLabels: Record<OrganizationUserRole, string> = {
 
 export default function OrganizationUsers({
   users,
+  canManageUsers,
   onEdit,
   onToggleStatus,
+  onCancelInvitation,
 }: OrganizationUsersProps) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -92,38 +96,57 @@ export default function OrganizationUsers({
                       ? "Ativo"
                       : user.status === "PENDING"
                         ? "Pendente"
-                        : "Inativo"}
+                        : user.status === "EXPIRED"
+                          ? "Convite expirado"
+                          : "Inativo"}
                   </span>
                 </td>
 
                 <td className="px-5 py-4">
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      title="Editar usuário"
-                      onClick={() => onEdit(user)}
-                      className="rounded-lg p-2 text-slate-400 hover:bg-blue-50 hover:text-[#315cf5]"
-                    >
-                      <Pencil size={15} />
-                    </button>
+                    {canManageUsers && user.id.startsWith("user:") && (
+                      <>
+                        <button
+                          type="button"
+                          title="Editar usuário e permissões"
+                          onClick={() => onEdit(user)}
+                          className="rounded-lg p-2 text-slate-400 hover:bg-blue-50 hover:text-[#315cf5]"
+                        >
+                          <Pencil size={15} />
+                        </button>
 
-                    <button
-                      type="button"
-                      title={
-                        user.status === "ACTIVE"
-                          ? "Desativar usuário"
-                          : "Ativar usuário"
-                      }
-                      onClick={() => onToggleStatus(user.id)}
-                      className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                    >
-                      <Power size={15} />
-                    </button>
-
-                    <MoreHorizontal
-                      size={17}
-                      className="text-slate-300"
-                    />
+                        <button
+                          type="button"
+                          title={
+                            user.status === "ACTIVE"
+                              ? "Desativar usuário"
+                              : "Ativar usuário"
+                          }
+                          onClick={() => onToggleStatus(user)}
+                          className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          <Power size={15} />
+                        </button>
+                      </>
+                    )}
+                    {canManageUsers && user.id.startsWith("invite:") && (
+                      <>
+                        <span className="px-2 text-[10px] text-slate-400">
+                          Convite por e-mail
+                        </span>
+                        {user.status === "PENDING" && (
+                          <button
+                            type="button"
+                            title="Cancelar convite"
+                            aria-label={`Cancelar convite para ${user.email}`}
+                            onClick={() => onCancelInvitation(user)}
+                            className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                          >
+                            <Ban size={15} />
+                          </button>
+                        )}
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

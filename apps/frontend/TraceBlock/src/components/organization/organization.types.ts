@@ -7,14 +7,17 @@ export type OrganizationUserRole =
 export type OrganizationUserStatus =
   | "ACTIVE"
   | "INACTIVE"
-  | "PENDING";
+  | "PENDING"
+  | "EXPIRED";
 
 export interface OrganizationUser {
   id: string;
   name: string;
   email: string;
+  phone: string | null;
   department: string;
   role: OrganizationUserRole;
   status: OrganizationUserStatus;
-  createdAt: string;
+  createdAt: string | null;
+  canManage?: boolean;
 }

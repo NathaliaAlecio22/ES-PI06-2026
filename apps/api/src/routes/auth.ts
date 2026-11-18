@@ -304,7 +304,7 @@ router.get("/me", async (req, res) => {
       include: { participante: true },
     });
 
-    if (!usuario || !usuario.participante_id) {
+    if (!usuario || !usuario.ativo || !usuario.participante_id) {
       return res.status(401).json({ message: "Sessão inválida ou expirada." });
     }
 
@@ -352,7 +352,11 @@ router.post("/login", async (req, res) => {
       },
     });
 
-    if (!usuario || !(await verifyPassword(senha, usuario.senha_hash))) {
+    if (
+      !usuario ||
+      !usuario.ativo ||
+      !(await verifyPassword(senha, usuario.senha_hash))
+    ) {
       return res.status(401).json({
         message: "E-mail ou senha incorretos.",
       });

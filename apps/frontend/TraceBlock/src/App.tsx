@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ForgotPassword from "./components/auth/ForgotPassword";
 import { HomePage } from "./pages/HomePage";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
+import AcceptInvite from "./components/auth/AcceptInvite";
 
 export default function App() {
   return(
@@ -13,6 +14,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/cadastro" element={<Cadastro />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/aceitar-convite" element={<AcceptInvite />} />
 
 
         <Route path="/" element={

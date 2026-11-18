@@ -6,17 +6,19 @@ import type {
   OrganizationUser,
   OrganizationUserRole,
 } from "./organization.types";
+import type { OrganizationUserInput } from "../../services/organization";
 
 interface UserFormModalProps {
   open: boolean;
   user?: OrganizationUser | null;
   onClose: () => void;
-  onSave: (user: Omit<OrganizationUser, "id" | "createdAt">) => void;
+  onSave: (user: OrganizationUserInput) => Promise<void>;
 }
 
 const initialForm = {
   name: "",
   email: "",
+  phone: "",
   department: "",
   role: "OPERATOR" as OrganizationUserRole,
 };
@@ -28,31 +30,42 @@ export default function UserFormModal({
   onSave,
 }: UserFormModalProps) {
   const [form, setForm] = useState(initialForm);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (user) {
       setForm({
         name: user.name,
         email: user.email,
+        phone: user.phone ?? "",
         department: user.department,
         role: user.role,
       });
     } else {
       setForm(initialForm);
     }
+    setError("");
   }, [user, open]);
 
   if (!open) return null;
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-
-    onSave({
-      ...form,
-      status: user?.status ?? "PENDING",
-    });
-
-    onClose();
+    setError("");
+    setIsSaving(true);
+    try {
+      await onSave(form);
+      onClose();
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Não foi possível salvar o usuário.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const inputClass =
@@ -66,12 +79,14 @@ export default function UserFormModal({
             <div className="flex items-center gap-2">
               <UserPlus size={19} className="text-[#315cf5]" />
               <h2 className="text-base font-semibold text-slate-800">
-                {user ? "Editar usuário" : "Adicionar usuário"}
+                {user ? "Editar usuário" : "Convidar usuário"}
               </h2>
             </div>
 
             <p className="mt-1 text-xs text-slate-400">
-              Preencha as informações do funcionário.
+              {user
+                ? "Atualize os dados e as permissões do usuário."
+                : "O usuário receberá um convite por e-mail para criar a senha."}
             </p>
           </div>
 
@@ -109,11 +124,25 @@ export default function UserFormModal({
             <input
               required
               type="email"
+              readOnly={Boolean(user)}
               value={form.email}
               onChange={(e) =>
                 setForm({ ...form, email: e.target.value })
               }
               placeholder="joao@empresa.com"
+              className={`${inputClass} read-only:bg-slate-50`}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+              Telefone
+            </label>
+
+            <input
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              placeholder="(00) 00000-0000"
               className={inputClass}
             />
           </div>
@@ -154,6 +183,12 @@ export default function UserFormModal({
             </select>
           </div>
 
+          {error && (
+            <p role="alert" className="text-sm text-red-600">
+              {error}
+            </p>
+          )}
+
           <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
             <button
               type="button"
@@ -165,9 +200,14 @@ export default function UserFormModal({
 
             <button
               type="submit"
-              className="rounded-lg bg-[#315cf5] px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-[#2448c9]"
+              disabled={isSaving}
+              className="rounded-lg bg-[#315cf5] px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-[#2448c9] disabled:cursor-wait disabled:opacity-60"
             >
-              {user ? "Salvar alterações" : "Cadastrar usuário"}
+              {isSaving
+                ? "Salvando..."
+                : user
+                  ? "Salvar alterações"
+                  : "Enviar convite"}
             </button>
           </div>
         </form>

@@ -9,6 +9,7 @@ import {
 } from "@provenance/shared";
 
 import { prisma } from "./lib/prisma";
+import organizacaoRouter from "./routes/organizacao";
 import produtosRouter from "./routes/produtos";
 import { participantesRouter } from "./routes/participantes";
 import authRouter from "./routes/auth";
@@ -74,6 +75,7 @@ app.set(
 
 app.use("/api/participantes", participantesRouter);
 app.use("/api/produtos", produtosRouter);
+app.use("/api/organizacao", organizacaoRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/auth", userRouter);
 

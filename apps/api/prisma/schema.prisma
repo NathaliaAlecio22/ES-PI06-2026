@@ -72,6 +72,7 @@ model participante {
   movimentacao_movimentacao_origem_idToparticipante  movimentacao[] @relation("movimentacao_origem_idToparticipante")
   usuario                                            usuario[]
   produtos_fabricados                                produto[]       @relation("produto_fabricante")
+  convites                                           ConviteUsuario[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -105,11 +106,35 @@ model usuario {
   email           String         @unique @db.VarChar(150)
   senha_hash      String
   perfil          String         @db.VarChar(30)
+  ativo           Boolean        @default(true)
   telefone        String?        @db.VarChar(30)
   cargo           String?        @db.VarChar(100)
   movimentacao    movimentacao[]
   participante    participante?  @relation(fields: [participante_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   lotes_cadastrados lote[]         @relation("lote_responsavel_cadastro")
+  convites_enviados ConviteUsuario[] @relation("convite_remetente")
+}
+
+model ConviteUsuario {
+  id              BigInt       @id @default(autoincrement())
+  participanteId  BigInt
+  remetenteId     BigInt
+  nome            String       @db.VarChar(150)
+  email           String       @db.VarChar(150)
+  telefone        String?      @db.VarChar(30)
+  cargo           String       @db.VarChar(100)
+  perfil          String       @db.VarChar(30)
+  tokenHash       String       @unique
+  status          String       @default("PENDENTE") @db.VarChar(20)
+  expiraEm        DateTime     @db.Timestamptz(6)
+  criadoEm        DateTime     @default(now()) @db.Timestamptz(6)
+  aceitoEm        DateTime?    @db.Timestamptz(6)
+  participante    participante @relation(fields: [participanteId], references: [id], onDelete: Cascade)
+  remetente       usuario      @relation("convite_remetente", fields: [remetenteId], references: [id], onDelete: Cascade)
+
+  @@index([participanteId, status])
+  @@index([email, status])
+  @@map("convites_usuario")
 }
 
 
