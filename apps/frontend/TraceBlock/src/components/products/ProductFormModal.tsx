@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import {
   X,
   Package,
@@ -8,11 +8,13 @@ import {
   CalendarDays,
 } from "lucide-react";
 
-import type { Product, ProductFormData } from "./Products.types";
+import type { ProductFormData } from "./Products.types";
 
 interface ProductFormModalProps {
   close: () => void;
-  onSave: (product: Product) => void;
+  onSave: (form: ProductFormData) => Promise<void>;
+  manufacturer: string;
+  responsible: string;
 }
 
 const initialForm: ProductFormData = {
@@ -26,15 +28,25 @@ const initialForm: ProductFormData = {
   quantity: "",
   unit: "kg",
   manufacturer: "",
-  responsible: "Carlos Eduardo Lima",
+  responsible: "",
   location: "",
 };
 
 export default function ProductFormModal({
   close,
   onSave,
+  manufacturer,
+  responsible,
 }: ProductFormModalProps) {
-  const [form, setForm] = useState<ProductFormData>(initialForm);
+  const [form, setForm] = useState<ProductFormData>(() => ({
+    ...initialForm,
+    manufacturer,
+    responsible,
+  }));
+  const [step, setStep] = useState(1);
+  const [isSaving, setIsSaving] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
 
   function updateField<K extends keyof ProductFormData>(
     field: K,
@@ -46,33 +58,28 @@ export default function ProductFormModal({
     }));
   }
 
-  function formatDate(date: string) {
-    if (!date) return "";
-
-    const [year, month, day] = date.split("-");
-    return `${day}/${month}/${year}`;
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitError("");
+    setIsSaving(true);
+    try {
+      await onSave(form);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível cadastrar o produto e o lote.",
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const newProduct: Product = {
-      code: form.code,
-      name: form.name,
-      lot: form.lot,
-      category: form.category,
-      date: formatDate(form.manufacturingDate),
-      owner: form.manufacturer,
-      location: form.location,
-      status: "Armazenado",
-      quantity: `${form.quantity} ${form.unit}`,
-      expirationDate: formatDate(form.expirationDate),
-      description: form.description,
-      manufacturer: form.manufacturer,
-      responsible: form.responsible,
-    };
-
-    onSave(newProduct);
+  function nextStep() {
+    if (formRef.current?.reportValidity()) {
+      setSubmitError("");
+      setStep((current) => Math.min(current + 1, 3));
+    }
   }
 
   const inputClass =
@@ -113,10 +120,25 @@ export default function ProductFormModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form ref={formRef} onSubmit={handleSubmit}>
+          <div className="border-b border-slate-100 px-6 pt-4">
+            <p className="text-xs font-medium text-slate-500">
+              Etapa {step} de 3
+            </p>
+            <div className="mt-2 flex gap-2 pb-4">
+              {[1, 2, 3].map((item) => (
+                <span
+                  key={item}
+                  className={`h-1 flex-1 rounded-full ${
+                    item <= step ? "bg-blue-600" : "bg-slate-200"
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
           <div className="max-h-[65vh] space-y-8 overflow-y-auto px-6 py-6">
             {/* Seção 1 */}
-            <section>
+            {step === 1 && <section>
               <div className="mb-5 flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
                   <Package size={20} />
@@ -185,8 +207,9 @@ export default function ProductFormModal({
                   />
                 </div>
               </div>
-            </section>
+            </section>}
 
+            {step === 2 && <>
             <div className="border-t border-slate-100" />
 
             {/* Seção 2 */}
@@ -255,8 +278,8 @@ export default function ProductFormModal({
                   <label className={labelClass}>Quantidade *</label>
                   <input
                     required
-                    min="0.01"
-                    step="any"
+                    min="0.001"
+                    step="0.001"
                     type="number"
                     value={form.quantity}
                     onChange={(e) => updateField("quantity", e.target.value)}
@@ -281,7 +304,9 @@ export default function ProductFormModal({
                 </div>
               </div>
             </section>
+            </>}
 
+            {step === 3 && <>
             <div className="border-t border-slate-100" />
 
             {/* Seção 3 */}
@@ -308,14 +333,13 @@ export default function ProductFormModal({
                     Organização fabricante *
                   </label>
                   <input
-                    required
+                    readOnly
                     value={form.manufacturer}
-                    onChange={(e) =>
-                      updateField("manufacturer", e.target.value)
-                    }
-                    placeholder="Nome da organização"
                     className={inputClass}
                   />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Organização vinculada à sua conta.
+                  </p>
                 </div>
 
                 <div>
@@ -323,10 +347,8 @@ export default function ProductFormModal({
                     Responsável pelo cadastro
                   </label>
                   <input
+                    readOnly
                     value={form.responsible}
-                    onChange={(e) =>
-                      updateField("responsible", e.target.value)
-                    }
                     className={inputClass}
                   />
                 </div>
@@ -362,6 +384,12 @@ export default function ProductFormModal({
                 </p>
               </div>
             </div>
+            </>}
+            {submitError && (
+              <p role="alert" className="text-sm font-medium text-red-600">
+                {submitError}
+              </p>
+            )}
           </div>
 
           {/* Rodapé */}
@@ -374,13 +402,37 @@ export default function ProductFormModal({
               Cancelar
             </button>
 
-            <button
-              type="submit"
-              className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
-            >
-              <ShieldCheck size={17} />
-              Cadastrar produto
-            </button>
+            {step > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSubmitError("");
+                  setStep((current) => current - 1);
+                }}
+                disabled={isSaving}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-50"
+              >
+                Voltar
+              </button>
+            )}
+            {step < 3 ? (
+              <button
+                type="button"
+                onClick={nextStep}
+                className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+              >
+                Próxima etapa
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60"
+              >
+                <ShieldCheck size={17} />
+                {isSaving ? "Cadastrando..." : "Cadastrar produto e lote"}
+              </button>
+            )}
           </div>
         </form>
       </div>

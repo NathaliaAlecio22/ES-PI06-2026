@@ -20,17 +20,22 @@ model acordo_entrega {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model lote {
-  id                   BigInt              @id @default(autoincrement())
-  produto_id           BigInt
-  codigo               String              @unique @db.VarChar(100)
-  responsavel_atual_id BigInt?
-  data_fabricacao      DateTime?           @db.Date
-  data_validade        DateTime?           @db.Date
-  status               String              @default("ATIVO") @db.VarChar(30)
-  produto              produto             @relation(fields: [produto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  participante         participante?       @relation(fields: [responsavel_atual_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  movimentacao         movimentacao[]
-  registro_condicao    registro_condicao[]
+  id                     BigInt        @id @default(autoincrement())
+  produto_id             BigInt
+  codigo                 String        @unique @db.VarChar(100)
+  responsavel_atual_id   BigInt?
+  responsavel_cadastro_id BigInt?
+  data_fabricacao        DateTime?     @db.Date
+  data_validade          DateTime?     @db.Date
+  quantidade             Decimal?      @db.Decimal(14, 3)
+  unidade_medida         String?       @db.VarChar(30)
+  localizacao_origem     String?       @db.VarChar(200)
+  status                 String        @default("ATIVO") @db.VarChar(30)
+  produto                produto       @relation(fields: [produto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  participante           participante? @relation(fields: [responsavel_atual_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  usuario_cadastro       usuario?      @relation("lote_responsavel_cadastro", fields: [responsavel_cadastro_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  movimentacao           movimentacao[]
+  registro_condicao      registro_condicao[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -66,14 +71,19 @@ model participante {
   movimentacao_movimentacao_destino_idToparticipante movimentacao[] @relation("movimentacao_destino_idToparticipante")
   movimentacao_movimentacao_origem_idToparticipante  movimentacao[] @relation("movimentacao_origem_idToparticipante")
   usuario                                            usuario[]
+  produtos_fabricados                                produto[]       @relation("produto_fabricante")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model produto {
-  id        BigInt  @id @default(autoincrement())
-  nome      String  @db.VarChar(150)
-  descricao String?
-  lote      lote[]
+  id             BigInt        @id @default(autoincrement())
+  codigo         String?       @unique @db.VarChar(100)
+  nome           String        @db.VarChar(150)
+  categoria      String?       @db.VarChar(100)
+  descricao      String?
+  fabricante_id  BigInt?
+  fabricante     participante? @relation("produto_fabricante", fields: [fabricante_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  lote           lote[]
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -99,6 +109,7 @@ model usuario {
   cargo           String?        @db.VarChar(100)
   movimentacao    movimentacao[]
   participante    participante?  @relation(fields: [participante_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lotes_cadastrados lote[]         @relation("lote_responsavel_cadastro")
 }
 
 

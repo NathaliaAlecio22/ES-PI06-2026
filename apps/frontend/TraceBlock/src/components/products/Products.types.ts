@@ -16,6 +16,7 @@ export interface Product {
   location: string;
   status: ProductStatus;
   quantity?: string;
+  unit?: string;
   expirationDate?: string;
   description?: string;
   manufacturer?: string;

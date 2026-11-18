@@ -32,6 +32,7 @@ export function autenticar(
         }
 
         const payload = verificarToken(token)
+        req.usuario = payload;
 
         next();
     } catch {

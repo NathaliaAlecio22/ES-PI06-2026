@@ -167,6 +167,7 @@ export default function ProductsTable({
               <option value="Medicamentos">Medicamentos</option>
               <option value="Eletrônicos">Eletrônicos</option>
               <option value="Matéria-prima">Matéria-prima</option>
+              <option value="Cosméticos">Cosméticos</option>
             </select>
 
             <ChevronDown
@@ -307,7 +308,7 @@ export default function ProductsTable({
         </p>
 
         <span className="text-xs text-slate-400">
-          Dados demonstrativos
+          Dados da organização
         </span>
       </div>
     </section>

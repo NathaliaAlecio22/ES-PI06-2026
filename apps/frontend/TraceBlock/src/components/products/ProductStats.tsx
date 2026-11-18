@@ -4,42 +4,53 @@ import {
   Warehouse,
   Clock3,
 } from "lucide-react";
+import type { ProductStatsData } from "../../services/produtos";
 
-const stats = [
+const statDefinitions = [
   {
     label: "Total de lotes",
-    value: "248",
+    key: "total",
     icon: PackageOpen,
     color: "text-blue-600",
     background: "bg-blue-50",
   },
   {
     label: "Em transporte",
-    value: "94",
+    key: "inTransit",
     icon: Truck,
     color: "text-indigo-600",
     background: "bg-indigo-50",
   },
   {
     label: "Armazenados",
-    value: "72",
+    key: "stored",
     icon: Warehouse,
     color: "text-emerald-600",
     background: "bg-emerald-50",
   },
   {
     label: "Pendentes",
-    value: "30",
+    key: "pending",
     icon: Clock3,
     color: "text-amber-600",
     background: "bg-amber-50",
   },
-];
+] satisfies Array<{
+  label: string;
+  key: keyof ProductStatsData;
+  icon: typeof PackageOpen;
+  color: string;
+  background: string;
+}>;
 
-export default function ProductStats() {
+interface ProductStatsProps {
+  stats: ProductStatsData;
+}
+
+export default function ProductStats({ stats }: ProductStatsProps) {
   return (
     <section className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-4">
-      {stats.map((stat, index) => {
+      {statDefinitions.map((stat, index) => {
         const Icon = stat.icon;
 
         return (
@@ -57,7 +68,7 @@ export default function ProductStats() {
 
             <div className="min-w-0">
               <p className="text-xl font-bold tracking-tight text-slate-900">
-                {stat.value}
+                {stats[stat.key]}
               </p>
 
               <p className="truncate text-xs text-slate-500">

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 
 import ProductStats from "../../components/products/ProductStats";
@@ -6,11 +6,25 @@ import ProductsTable from "../../components/products/ProductsTable";
 import ProductFormModal from "../../components/products/ProductFormModal";
 import ProductDetailsModal from "../../components/products/ProductDetailsModal";
 
-import { initialProducts } from "../../components/products/products.data";
-import type { Product } from "../../components/products/Products.types";
+import type { Product, ProductFormData } from "../../components/products/Products.types";
+import {
+  buscarEstatisticasProdutos,
+  cadastrarProduto,
+  listarProdutos,
+  type ProductStatsData,
+} from "../../services/produtos";
+import { getUsuario } from "../../services/auth";
 
 export default function ProductsPage() {
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [stats, setStats] = useState<ProductStatsData>({
+    total: 0,
+    inTransit: 0,
+    stored: 0,
+    pending: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -20,6 +34,38 @@ export default function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(
     null
   );
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProducts() {
+      try {
+        const [loadedProducts, loadedStats] = await Promise.all([
+          listarProdutos(),
+          buscarEstatisticasProdutos(),
+        ]);
+        if (active) {
+          setProducts(loadedProducts);
+          setStats(loadedStats);
+        }
+      } catch (error) {
+        if (active) {
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível carregar produtos e lotes.",
+          );
+        }
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    }
+
+    void loadProducts();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Pesquisa e filtros
   const filteredProducts = useMemo(() => {
@@ -45,28 +91,18 @@ export default function ProductsPage() {
   }, [products, search, category, status]);
 
   // Cadastro de produto
-  function handleSaveProduct(product: Product) {
-    const codeExists = products.some(
-      (item) => item.code.toLowerCase() === product.code.toLowerCase()
-    );
-
-    const lotExists = products.some(
-      (item) => item.lot.toLowerCase() === product.lot.toLowerCase()
-    );
-
-    if (codeExists || lotExists) {
-      window.alert(
-        codeExists
-          ? "Já existe um produto com esse código."
-          : "Já existe um produto com esse identificador de lote."
-      );
-
-      return;
-    }
-
+  async function handleSaveProduct(form: ProductFormData) {
+    const product = await cadastrarProduto(form);
     setProducts((current) => [product, ...current]);
+    setStats((current) => ({
+      ...current,
+      total: current.total + 1,
+      stored: current.stored + 1,
+    }));
     setFormOpen(false);
   }
+
+  const usuario = getUsuario();
 
   return (
     <div className="space-y-6">
@@ -93,7 +129,12 @@ export default function ProductsPage() {
       </div>
 
       {/* Indicadores */}
-      <ProductStats />
+      {loadError && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {loadError}
+        </p>
+      )}
+      <ProductStats stats={stats} />
 
       {/* Tabela e filtros */}
       <ProductsTable
@@ -106,12 +147,19 @@ export default function ProductsPage() {
         setStatus={setStatus}
         onSelect={setSelectedProduct}
       />
+      {isLoading && (
+        <p role="status" className="text-center text-sm text-slate-500">
+          Carregando produtos e lotes...
+        </p>
+      )}
 
       {/* Modal de cadastro */}
       {formOpen && (
         <ProductFormModal
           close={() => setFormOpen(false)}
           onSave={handleSaveProduct}
+          manufacturer={usuario?.empresa ?? ""}
+          responsible={usuario?.nome ?? ""}
         />
       )}
 
