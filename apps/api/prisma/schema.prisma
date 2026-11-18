@@ -45,6 +45,12 @@ model movimentacao {
   origem_id                                          BigInt?
   destino_id                                         BigInt
   usuario_id                                         BigInt
+  status                                             String          @default("AGUARDANDO_CONFIRMACAO") @db.VarChar(30)
+  quantidade                                         Decimal?        @db.Decimal(14, 3)
+  temperatura                                        Decimal?        @db.Decimal(5, 2)
+  umidade                                            Decimal?        @db.Decimal(5, 2)
+  observacoes                                        String?
+  confirmado_em                                      DateTime?       @db.Timestamptz(6)
   tipo                                               String          @db.VarChar(30)
   data_movimentacao                                  DateTime?       @default(now()) @db.Timestamptz(6)
   localizacao                                        String?         @db.VarChar(200)
