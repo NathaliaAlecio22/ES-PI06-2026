@@ -5,6 +5,9 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { hashPassword } from "../utils/password";
 
+import { autenticar } from "../middlewares/auth.middleware";
+import { loadCurrentUser } from "../utils/session";
+
 const participantTypes = [
   "Fabricante",
   "Distribuidor",
@@ -143,5 +146,29 @@ participantesRouter.post("/cadastro", async (request, response) => {
     response.status(500).json({
       message: "Não foi possível concluir o cadastro.",
     });
+  }
+});
+
+participantesRouter.get("/destinos", autenticar, async (request, response) => {
+  try {
+    const user = await loadCurrentUser(request.usuario, response);
+    if (!user?.participante_id) return;
+
+    const participants = await prisma.participante.findMany({
+      where: { ativo: true, id: { not: user.participante_id } },
+      select: { id: true, nome: true, tipo: true },
+      orderBy: { nome: "asc" },
+    });
+
+    response.json({
+      participants: participants.map((p) => ({
+        id: p.id.toString(),
+        name: p.nome,
+        type: p.tipo ?? "",
+      })),
+    });
+  } catch (error) {
+    console.error("Erro ao listar destinos:", error);
+    response.status(500).json({ message: "Não foi possível carregar os destinos." });
   }
 });

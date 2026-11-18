@@ -144,18 +144,16 @@ router.get("/", autenticar, async (request, response) => {
     if (!usuario?.participante_id) return;
 
     const products = await prisma.produto.findMany({
-      where: { fabricante_id: usuario.participante_id },
-      include: {
-        fabricante: true,
-        lote: {
-          include: {
-            participante: true,
-            usuario_cadastro: true,
-          },
-          orderBy: { id: "desc" },
-        },
+     where: {lote: {some: {responsavel_atual_id: usuario.participante_id}}},
+     include: {
+      fabricante: true,
+      lote: {
+        where: {responsavel_atual_id: usuario.participante_id},
+        include: {participante: true, usuario_cadastro: true},
+        orderBy: {id: "desc"}
       },
-      orderBy: { id: "desc" },
+     },
+     orderBy: {id: "desc"}
     });
 
     response.json({ products: products.flatMap(toProductRow) });
@@ -171,8 +169,8 @@ router.get("/stats", autenticar, async (request, response) => {
     if (!usuario?.participante_id) return;
 
     const lots = await prisma.lote.findMany({
-      where: { produto: { fabricante_id: usuario.participante_id } },
-      select: { status: true },
+      where: {responsavel_atual_id: usuario.participante_id},
+      select: {status: true},
     });
 
     const stats = lots.reduce(

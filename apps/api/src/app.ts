@@ -14,6 +14,7 @@ import produtosRouter from "./routes/produtos";
 import { participantesRouter } from "./routes/participantes";
 import authRouter from "./routes/auth";
 import userRouter from "./routes/user";
+import transferenciasRouter from "./routes/transferencias";
 
 import { z } from "zod";
 
@@ -37,6 +38,7 @@ import {
 
 import { env } from "./config/env.js";
 import { batches, createId, workflows, type StoredWorkflow } from "./store";
+import { autenticar } from "./middlewares/auth.middleware";
 
 export const app = express();
 
@@ -78,6 +80,8 @@ app.use("/api/produtos", produtosRouter);
 app.use("/api/organizacao", organizacaoRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/auth", userRouter);
+app.use("/api/transferencias", transferenciasRouter);
+app.use(["/api/worflows", "/api/batches"], autenticar);
 
 function notFound(response: Response): void {
   response.status(404).json({ error: "Recurso não encontrado" });
