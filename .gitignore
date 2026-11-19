@@ -59,3 +59,6 @@ temp/
 *.swp
 *.swo
 *~
+
+# Arquivos compactados
+*.zip
