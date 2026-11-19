@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 
 import MetricsCard from "../../components/overview/MetricsCard";
@@ -11,11 +11,15 @@ import {
   type ProductStatsData,
 } from "../../services/produtos";
 
+import { listarProdutos } from "../../services/produtos";
+import type { Product } from "../../components/products/Products.types";
+
 interface OverviewProps {
   goProducts: () => void;
 }
 
 export default function Overview({ goProducts }: OverviewProps) {
+  const [products, setProducts] = useState<Product[]>([]);
   const [stats, setStats] = useState<ProductStatsData | null>(null);
 
   useEffect(() => {
@@ -33,6 +37,41 @@ export default function Overview({ goProducts }: OverviewProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProducts() {
+      try {
+        const data = await listarProdutos();
+        if (!cancelled) setProducts(data);
+      } catch (error) {
+        console.error("Erro ao carregar lotes:", error);
+      }
+    }
+
+    void loadProducts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const lotsData = useMemo(() => {
+    return [
+      {
+        name: "Em transporte",
+        value: products.filter((product) => product.status === "Em transporte")
+          .length,
+        color: "#315CF5",
+      },
+      {
+        name: "Armazenados",
+        value: products.filter((product) => product.status === "Armazenado")
+          .length,
+        color: "#10B981",
+      },
+    ];
+  }, [products]);
 
   return (
     <div className="space-y-6">
@@ -60,7 +99,7 @@ export default function Overview({ goProducts }: OverviewProps) {
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <MovementsCharts />
-        <LotsChart />
+        <LotsChart lotsData={lotsData} />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">

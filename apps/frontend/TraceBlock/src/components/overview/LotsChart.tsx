@@ -6,35 +6,21 @@ import {
   Tooltip,
 } from "recharts";
 
-const lotsData = [
-  {
-    name: "Em transporte",
-    value: 94,
-    color: "#315cf5",
-  },
-  {
-    name: "Armazenados",
-    value: 72,
-    color: "#10b981",
-  },
-  {
-    name: "Em processamento",
-    value: 52,
-    color: "#f59e0b",
-  },
-  {
-    name: "Outros",
-    value: 30,
-    color: "#94a3b8",
-  },
-];
+export interface LotStatusData {
+  name: string;
+  value: number;
+  color: string;
+}
 
-const totalLots = lotsData.reduce(
-  (total, item) => total + item.value,
-  0
-);
+interface LotsChartProps {
+  lotsData: LotStatusData[];
+}
 
-export default function LotsChart() {
+export default function LotsChart({ lotsData }: LotsChartProps) {
+  const totalLots = lotsData.reduce(
+    (total, item) => total + item.value, 0,
+  );
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       {/* Cabeçalho */}
@@ -119,7 +105,7 @@ export default function LotsChart() {
         {/* Legenda */}
         <div className="w-full space-y-5">
           {lotsData.map((item) => {
-            const percentage = (
+            const percentage = totalLots === 0 ? "0.0" : (
               (item.value / totalLots) *
               100
             ).toFixed(1);
