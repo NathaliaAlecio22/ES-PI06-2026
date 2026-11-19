@@ -5,7 +5,9 @@ import {
   Hash,
 } from "lucide-react";
 
-import type { Transfer } from "./tranfers.type";
+import type {
+  Transfer,
+} from "./tranfers.type";
 
 interface Props {
   transfers: Transfer[];
@@ -17,37 +19,65 @@ function StorageStatusBadge({
 }: {
   status: Transfer["storageStatus"];
 }) {
-  const styles = {
-    "Em transporte": "bg-blue-50 text-blue-700 border-blue-200",
-    Armazenado: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  const styles: Record<
+    Transfer["storageStatus"],
+    string
+  > = {
+    "Em transporte":
+      "bg-blue-50 text-blue-700 border-blue-200",
+
+    Armazenado:
+      "bg-emerald-50 text-emerald-700 border-emerald-200",
+
+    Pendente:
+      "bg-slate-50 text-slate-700 border-slate-200",
   };
 
-  const dots = {
+  const dots: Record<
+    Transfer["storageStatus"],
+    string
+  > = {
     "Em transporte": "bg-blue-500",
     Armazenado: "bg-emerald-500",
+    Pendente: "bg-slate-400",
   };
 
   return (
     <span
       className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium ${styles[status]}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${dots[status]}`} />
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${dots[status]}`}
+      />
       {status}
     </span>
   );
 }
 
-function TransferStatus({ status }: { status: Transfer["status"] }) {
-  const styles = {
-    Confirmada: "bg-green-50 text-green-700 border-green-200",
-    "Em andamento": "bg-blue-50 text-blue-700 border-blue-200",
-    "Aguardando confirmação": "bg-amber-50 text-amber-700 border-amber-200",
-    "Com ocorrência": "bg-red-50 text-red-700 border-red-200",
+function TransferStatus({
+  status,
+}: {
+  status: Transfer["status"];
+}) {
+  const styles: Record<
+    Transfer["status"],
+    string
+  > = {
+    Confirmada:
+      "bg-green-50 text-green-700 border-green-200",
+
+    "Aguardando confirmação":
+      "bg-amber-50 text-amber-700 border-amber-200",
+
+    "Com ocorrência":
+      "bg-red-50 text-red-700 border-red-200",
   };
 
-  const dots = {
+  const dots: Record<
+    Transfer["status"],
+    string
+  > = {
     Confirmada: "bg-green-500",
-    "Em andamento": "bg-blue-500",
     "Aguardando confirmação": "bg-amber-500",
     "Com ocorrência": "bg-red-500",
   };
@@ -56,13 +86,18 @@ function TransferStatus({ status }: { status: Transfer["status"] }) {
     <span
       className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium ${styles[status]}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${dots[status]}`} />
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${dots[status]}`}
+      />
       {status}
     </span>
   );
 }
 
-export default function TransferTable({ transfers, onView }: Props) {
+export default function TransferTable({
+  transfers,
+  onView,
+}: Props) {
   if (transfers.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
@@ -110,7 +145,7 @@ export default function TransferTable({ transfers, onView }: Props) {
         <tbody>
           {transfers.map((transfer) => (
             <tr
-              key={transfer.id}
+              key={transfer.rawId}
               className="border-b border-slate-100 transition hover:bg-slate-50/70"
             >
               <td className="px-5 py-4">
@@ -146,7 +181,10 @@ export default function TransferTable({ transfers, onView }: Props) {
 
               <td className="px-5 py-4">
                 <div className="flex items-center gap-2">
-                  <ArrowRight size={14} className="shrink-0 text-slate-400" />
+                  <ArrowRight
+                    size={14}
+                    className="shrink-0 text-slate-400"
+                  />
 
                   <span className="text-sm font-medium text-slate-700">
                     {transfer.newOwner}
@@ -155,7 +193,10 @@ export default function TransferTable({ transfers, onView }: Props) {
               </td>
 
               <td className="px-5 py-4">
-                <p className="text-sm text-slate-700">{transfer.date}</p>
+                <p className="text-sm text-slate-700">
+                  {transfer.date}
+                </p>
+
                 <p className="mt-1 text-xs text-slate-400">
                   {transfer.time}
                 </p>
@@ -166,13 +207,18 @@ export default function TransferTable({ transfers, onView }: Props) {
               </td>
 
               <td className="px-5 py-4">
-                <StorageStatusBadge status={transfer.storageStatus} />
-                </td>
+                <StorageStatusBadge
+                  status={transfer.storageStatus}
+                />
+              </td>
 
               <td className="px-5 py-4">
                 <div className="flex items-center gap-1.5 text-xs text-slate-500">
                   <Hash size={13} />
-                  <span className="font-mono">{transfer.hash}</span>
+
+                  <span className="font-mono">
+                    {transfer.hash}
+                  </span>
                 </div>
               </td>
 

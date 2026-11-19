@@ -1,37 +1,73 @@
 export type TransferStatus =
   | "Confirmada"
-  | "Em andamento"
   | "Aguardando confirmação"
   | "Com ocorrência";
 
-export type StorageStatus = "Em transporte" | "Armazenado";
+export type StorageStatus =
+  | "Em transporte"
+  | "Armazenado"
+  | "Pendente";
 
 export interface Transfer {
   id: string;
+  rawId: string;
+
   product: string;
   lot: string;
+
   previousOwner: string;
   newOwner: string;
+
   date: string;
   time: string;
+
   status: TransferStatus;
   storageStatus: StorageStatus;
+
   hash: string;
   location: string;
   quantity: string;
+
   temperature?: string;
   humidity?: string;
   notes?: string;
+
+  canRespond: boolean;
 }
 
 export interface NewTransferData {
-  product: string;
   lot: string;
-  destination: string;
+  destinationId: string;
   location: string;
-  date: string;
-  time: string;
   temperature: string;
   humidity: string;
   notes: string;
+}
+
+export interface TransferLotOption {
+  id: string;
+  code: string;
+  product: string;
+  quantity: string;
+  unit: string;
+  currentOwner: string;
+  location: string;
+}
+
+export interface TransferParticipantOption {
+  id: string;
+  name: string;
+  type: string | null;
+}
+
+export interface TransferOptions {
+  lots: TransferLotOption[];
+  participants: TransferParticipantOption[];
+}
+
+export interface TransferStatsData {
+  total: number;
+  pending: number;
+  confirmed: number;
+  withIssue: number;
 }

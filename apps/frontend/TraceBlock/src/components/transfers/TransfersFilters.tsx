@@ -1,9 +1,15 @@
-import { Search, SlidersHorizontal, Warehouse, X } from "lucide-react";
+import {
+  Search,
+  SlidersHorizontal,
+  Warehouse,
+  X,
+} from "lucide-react";
 
 interface Props {
   search: string;
   status: string;
   storageStatus: string;
+
   onSearchChange: (value: string) => void;
   onStatusChange: (value: string) => void;
   onStorageStatusChange: (value: string) => void;
@@ -19,7 +25,10 @@ export default function TransferFilters({
   onStorageStatusChange,
   onReset,
 }: Props) {
-  const hasFilters = search !== "" || status !== "Todos" || storageStatus !== 'Todos';
+  const hasFilters =
+    search !== "" ||
+    status !== "Todos" ||
+    storageStatus !== "Todos";
 
   return (
     <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
@@ -29,7 +38,9 @@ export default function TransferFilters({
 
           <input
             value={search}
-            onChange={(event) => onSearchChange(event.target.value)}
+            onChange={(event) =>
+              onSearchChange(event.target.value)
+            }
             placeholder="Buscar transferência, produto ou lote..."
             className="w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
           />
@@ -40,30 +51,37 @@ export default function TransferFilters({
 
           <select
             value={status}
-            onChange={(event) => onStatusChange(event.target.value)}
+            onChange={(event) =>
+              onStatusChange(event.target.value)
+            }
             className="min-w-0 bg-transparent text-sm outline-none"
           >
             <option value="Todos">Todos os status</option>
             <option value="Confirmada">Confirmada</option>
-            <option value="Em andamento">Em andamento</option>
             <option value="Aguardando confirmação">
               Aguardando confirmação
             </option>
-            <option value="Com ocorrência">Com ocorrência</option>
+            <option value="Com ocorrência">
+              Com ocorrência
+            </option>
           </select>
         </div>
 
         <div className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-slate-500">
-            <Warehouse size={16} />
+          <Warehouse size={16} />
 
-            <select
-                value={storageStatus}
-                onChange={(e) => onStorageStatusChange(e.target.value)}
-                className="min-w-0 bg-transparent text-sm outline-none">
-                    <option value="Todos">Todas as opções</option>
-                    <option value="Em transporte">Em transporte</option>
-                    <option value="Armazenado">Armazenado</option>
-                </select>
+          <select
+            value={storageStatus}
+            onChange={(event) =>
+              onStorageStatusChange(event.target.value)
+            }
+            className="min-w-0 bg-transparent text-sm outline-none"
+          >
+            <option value="Todos">Todas as opções</option>
+            <option value="Em transporte">Em transporte</option>
+            <option value="Armazenado">Armazenado</option>
+            <option value="Pendente">Pendente</option>
+          </select>
         </div>
       </div>
 

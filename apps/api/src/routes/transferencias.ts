@@ -29,17 +29,23 @@ const storageLabels: Record<string, string> = {
 
 class HttpError extends Error {
   status: number;
+
   constructor(status: number, message: string) {
     super(message);
     this.status = status;
   }
 }
 
-function handleError(error: unknown, response: Response, fallback: string) {
+function handleError(
+  error: unknown,
+  response: Response,
+  fallback: string,
+) {
   if (error instanceof HttpError) {
     response.status(error.status).json({ message: error.message });
     return;
   }
+
   console.error(fallback, error);
   response.status(500).json({ message: fallback });
 }
@@ -50,11 +56,15 @@ const optionalNumber = z.preprocess(
 );
 
 const createSchema = z.object({
-  lot: z.string().trim().min(1).max(100), // código do lote
+  lot: z.string().trim().min(1).max(100),
   destinationId: z.string().regex(/^\d+$/, "Destino inválido."),
   location: z.string().trim().min(1).max(200),
   temperature: optionalNumber,
-  humidity: optionalNumber,
+  humidity: optionalNumber.refine(
+    (value) =>
+      value === undefined || (value >= 0 && value <= 100),
+    "A umidade deve estar entre 0 e 100%.",
+  ),
   notes: z.string().trim().max(2_000).optional(),
 });
 
@@ -68,7 +78,9 @@ const include = {
   participante_movimentacao_destino_idToparticipante: true,
 } satisfies Prisma.movimentacaoInclude;
 
-type TransferRow = Prisma.movimentacaoGetPayload<{ include: typeof include }>;
+type TransferRow = Prisma.movimentacaoGetPayload<{
+  include: typeof include;
+}>;
 
 const zone = "America/Sao_Paulo";
 
@@ -82,184 +94,428 @@ function toTransfer(row: TransferRow, participantId: bigint) {
     rawId: row.id.toString(),
     product: row.lote.produto.nome,
     lot: row.lote.codigo,
+
     previousOwner:
       row.participante_movimentacao_origem_idToparticipante?.nome ?? "—",
-    newOwner: row.participante_movimentacao_destino_idToparticipante.nome,
-    date: when.toLocaleDateString("pt-BR", { timeZone: zone }),
+
+    newOwner:
+      row.participante_movimentacao_destino_idToparticipante.nome,
+
+    date: when.toLocaleDateString("pt-BR", {
+      timeZone: zone,
+    }),
+
     time: when.toLocaleTimeString("pt-BR", {
       hour: "2-digit",
       minute: "2-digit",
       timeZone: zone,
     }),
+
     status: statusLabels[row.status] ?? row.status,
-    storageStatus: storageLabels[row.lote.status] ?? "Pendente",
+
+    storageStatus:
+      storageLabels[row.lote.status] ?? "Pendente",
+
     hash: row.tx_hash ?? "Pendente",
     location: row.localizacao ?? "",
-    quantity: row.quantidade ? `${row.quantidade} ${unit}`.trim() : "",
-    temperature: row.temperatura != null ? `${row.temperatura}°C` : undefined,
-    humidity: row.umidade != null ? `${row.umidade}%` : undefined,
+
+    quantity: row.quantidade
+      ? `${row.quantidade.toString()} ${unit}`.trim()
+      : "",
+
+    temperature: row.temperatura?.toString(),
+    humidity: row.umidade?.toString(),
     notes: row.observacoes ?? undefined,
+
     canRespond:
-      row.destino_id === participantId && row.status === STATUS.PENDING,
+      row.destino_id === participantId &&
+      row.status === STATUS.PENDING,
   };
 }
 
 function paramId(raw: string | string[] | undefined): bigint {
   const value = Array.isArray(raw) ? raw[0] : raw;
+
   if (typeof value !== "string" || !/^\d+$/.test(value)) {
     throw new HttpError(400, "Transferência inválida.");
   }
+
   return BigInt(value);
 }
 
-// Lista: transferências em que minha organização é origem OU destino
+// ======================================================
+// OPÇÕES PARA O FORMULÁRIO
+// Retorna lotes disponíveis e participantes ativos.
+// ======================================================
+
+router.get("/opcoes", autenticar, async (request, response) => {
+  try {
+    const user = await loadCurrentUser(request.usuario, response);
+    if (!user?.participante_id) return;
+
+    const participantId = user.participante_id;
+
+    const [lots, participants] = await Promise.all([
+      prisma.lote.findMany({
+        where: {
+          responsavel_atual_id: participantId,
+          status: {
+            in: ["ATIVO", "ARMAZENADO"],
+          },
+          movimentacao: {
+            none: {
+              tipo: "TRANSFERENCIA",
+              status: STATUS.PENDING,
+            },
+          },
+        },
+        include: {
+          produto: true,
+        },
+        orderBy: {
+          id: "desc",
+        },
+      }),
+
+      prisma.participante.findMany({
+        where: {
+          ativo: true,
+          id: {
+            not: participantId,
+          },
+        },
+        select: {
+          id: true,
+          nome: true,
+          tipo: true,
+        },
+        orderBy: {
+          nome: "asc",
+        },
+      }),
+    ]);
+
+    response.json({
+      lots: lots.map((lot) => ({
+        id: lot.id.toString(),
+        code: lot.codigo,
+        product: lot.produto.nome,
+        quantity: lot.quantidade?.toString() ?? "",
+        unit: lot.unidade_medida ?? "",
+        currentOwner: user.participante?.nome ?? "",
+        location: lot.localizacao_origem ?? "",
+      })),
+
+      participants: participants.map((participant) => ({
+        id: participant.id.toString(),
+        name: participant.nome,
+        type: participant.tipo,
+      })),
+    });
+  } catch (error) {
+    handleError(
+      error,
+      response,
+      "Não foi possível carregar as opções de transferência.",
+    );
+  }
+});
+
+// ======================================================
+// LISTAGEM
+// ======================================================
+
 router.get("/", autenticar, async (request, response) => {
   try {
     const user = await loadCurrentUser(request.usuario, response);
     if (!user?.participante_id) return;
-    const pid = user.participante_id;
+
+    const participantId = user.participante_id;
 
     const rows = await prisma.movimentacao.findMany({
       where: {
         tipo: "TRANSFERENCIA",
-        OR: [{ origem_id: pid }, { destino_id: pid }],
+        OR: [
+          { origem_id: participantId },
+          { destino_id: participantId },
+        ],
       },
       include,
-      orderBy: { id: "desc" },
+      orderBy: {
+        id: "desc",
+      },
     });
 
-    response.json({ transfers: rows.map((row) => toTransfer(row, pid)) });
+    response.json({
+      transfers: rows.map((row) =>
+        toTransfer(row, participantId),
+      ),
+    });
   } catch (error) {
-    handleError(error, response, "Não foi possível carregar as transferências.");
+    handleError(
+      error,
+      response,
+      "Não foi possível carregar as transferências.",
+    );
   }
 });
 
-// Indicadores
+// ======================================================
+// INDICADORES
+// ======================================================
+
 router.get("/stats", autenticar, async (request, response) => {
   try {
     const user = await loadCurrentUser(request.usuario, response);
     if (!user?.participante_id) return;
-    const pid = user.participante_id;
+
+    const participantId = user.participante_id;
 
     const rows = await prisma.movimentacao.findMany({
       where: {
         tipo: "TRANSFERENCIA",
-        OR: [{ origem_id: pid }, { destino_id: pid }],
+        OR: [
+          { origem_id: participantId },
+          { destino_id: participantId },
+        ],
       },
-      select: { status: true },
+      select: {
+        status: true,
+      },
     });
 
     response.json({
       total: rows.length,
-      pending: rows.filter((r) => r.status === STATUS.PENDING).length,
-      confirmed: rows.filter((r) => r.status === STATUS.CONFIRMED).length,
-      withIssue: rows.filter((r) => r.status === STATUS.ISSUE).length,
+
+      pending: rows.filter(
+        (row) => row.status === STATUS.PENDING,
+      ).length,
+
+      confirmed: rows.filter(
+        (row) => row.status === STATUS.CONFIRMED,
+      ).length,
+
+      withIssue: rows.filter(
+        (row) => row.status === STATUS.ISSUE,
+      ).length,
     });
   } catch (error) {
-    handleError(error, response, "Não foi possível carregar os indicadores.");
+    handleError(
+      error,
+      response,
+      "Não foi possível carregar os indicadores.",
+    );
   }
 });
 
-// 1) Origem cria a transferência
+// ======================================================
+// CRIAR TRANSFERÊNCIA
+// A custódia ainda permanece com a origem.
+// ======================================================
+
 router.post("/", autenticar, async (request, response) => {
   const parsed = createSchema.safeParse(request.body);
+
   if (!parsed.success) {
     response.status(400).json({
       message: "Confira os dados da transferência.",
+
       errors: parsed.error.issues.map(({ path, message }) => ({
         field: path.join("."),
         message,
       })),
     });
+
     return;
   }
 
   try {
     const user = await loadCurrentUser(request.usuario, response);
     if (!user?.participante_id) return;
-    const pid = user.participante_id;
+
+    const participantId = user.participante_id;
 
     if (roleFromProfile(user.perfil) === "VIEWER") {
       response.status(403).json({
         message: "Seu perfil não permite criar transferências.",
       });
+
       return;
     }
 
     const input = parsed.data;
     const destinationId = BigInt(input.destinationId);
-    if (destinationId === pid) {
+
+    if (destinationId === participantId) {
       response.status(400).json({
         message: "O destino deve ser diferente da sua organização.",
       });
+
       return;
     }
 
     const created = await prisma.$transaction(async (tx) => {
-      const lote = await tx.lote.findUnique({ where: { codigo: input.lot } });
-      if (!lote) throw new HttpError(404, "Lote não encontrado.");
-      if (lote.responsavel_atual_id !== pid) {
-        throw new HttpError(403, "Seu lote não está sob a custódia da sua organização.");
-      }
-      if (lote.status === "EM_TRANSPORTE") {
-        throw new HttpError(409, "Este lote já possui uma transferência em andamento.");
-      }
-
-      const destino = await tx.participante.findUnique({
-        where: { id: destinationId },
+      const lot = await tx.lote.findUnique({
+        where: {
+          codigo: input.lot,
+        },
       });
-      if (!destino || !destino.ativo) {
-        throw new HttpError(400, "Destino inválido ou inativo.");
+
+      if (!lot) {
+        throw new HttpError(404, "Lote não encontrado.");
       }
 
-      // Reserva o lote de forma atômica (evita duas transferências simultâneas)
+      if (lot.responsavel_atual_id !== participantId) {
+        throw new HttpError(
+          403,
+          "Seu lote não está sob a custódia da sua organização.",
+        );
+      }
+
+      if (!["ATIVO", "ARMAZENADO"].includes(lot.status)) {
+        throw new HttpError(
+          409,
+          "Este lote não está disponível para transferência.",
+        );
+      }
+
+      const pendingMovement = await tx.movimentacao.findFirst({
+        where: {
+          lote_id: lot.id,
+          tipo: "TRANSFERENCIA",
+          status: STATUS.PENDING,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (pendingMovement) {
+        throw new HttpError(
+          409,
+          "Este lote já possui uma transferência em andamento.",
+        );
+      }
+
+      const destination = await tx.participante.findUnique({
+        where: {
+          id: destinationId,
+        },
+      });
+
+      if (!destination || destination.ativo !== true) {
+        throw new HttpError(
+          400,
+          "Destino inválido ou inativo.",
+        );
+      }
+
+      // Reserva o lote de forma atômica.
+      // Impede duas saídas simultâneas do mesmo lote.
+
       const claimed = await tx.lote.updateMany({
         where: {
-          id: lote.id,
-          responsavel_atual_id: pid,
-          status: { not: "EM_TRANSPORTE" },
+          id: lot.id,
+          responsavel_atual_id: participantId,
+          status: {
+            in: ["ATIVO", "ARMAZENADO"],
+          },
         },
-        data: { status: "EM_TRANSPORTE" },
+        data: {
+          status: "EM_TRANSPORTE",
+        },
       });
+
       if (claimed.count !== 1) {
-        throw new HttpError(409, "Este lote já possui uma transferência em andamento.");
+        throw new HttpError(
+          409,
+          "Este lote já possui uma transferência em andamento.",
+        );
       }
 
-      return tx.movimentacao.create({
+      const movement = await tx.movimentacao.create({
         data: {
-          lote_id: lote.id,
-          origem_id: pid,
+          lote_id: lot.id,
+          origem_id: participantId,
           destino_id: destinationId,
           usuario_id: user.id,
           tipo: "TRANSFERENCIA",
           status: STATUS.PENDING,
           localizacao: input.location,
-          quantidade: lote.quantidade,
+          quantidade: lot.quantidade,
+
           temperatura:
-            input.temperature != null ? new Prisma.Decimal(input.temperature) : null,
+            input.temperature != null
+              ? new Prisma.Decimal(input.temperature)
+              : null,
+
           umidade:
-            input.humidity != null ? new Prisma.Decimal(input.humidity) : null,
+            input.humidity != null
+              ? new Prisma.Decimal(input.humidity)
+              : null,
+
           observacoes: input.notes || null,
         },
         include,
       });
+
+      // Histórico de condições do lote.
+      if (
+        input.temperature != null ||
+        input.humidity != null
+      ) {
+        await tx.registro_condicao.create({
+          data: {
+            lote_id: lot.id,
+
+            temperatura:
+              input.temperature != null
+                ? new Prisma.Decimal(input.temperature)
+                : null,
+
+            umidade:
+              input.humidity != null
+                ? new Prisma.Decimal(input.humidity)
+                : null,
+
+            localizacao: input.location,
+          },
+        });
+      }
+
+      return movement;
     });
 
-    response.status(201).json({ transfer: toTransfer(created, pid) });
+    response.status(201).json({
+      transfer: toTransfer(created, participantId),
+    });
   } catch (error) {
-    handleError(error, response, "Não foi possível criar a transferência.");
+    handleError(
+      error,
+      response,
+      "Não foi possível criar a transferência.",
+    );
   }
 });
 
-// 2) Destino confirma o recebimento -> custódia muda
+// ======================================================
+// CONFIRMAR RECEBIMENTO
+// Somente o destino pode confirmar.
+// Aqui a custódia muda.
+// ======================================================
+
 router.post("/:id/confirmar", autenticar, async (request, response) => {
   try {
     const user = await loadCurrentUser(request.usuario, response);
     if (!user?.participante_id) return;
-    const pid = user.participante_id;
+
+    const participantId = user.participante_id;
 
     if (roleFromProfile(user.perfil) === "VIEWER") {
-      response.status(403).json({ message: "Seu perfil não permite confirmar recebimentos." });
+      response.status(403).json({
+        message: "Seu perfil não permite confirmar recebimentos.",
+      });
+
       return;
     }
 
@@ -267,49 +523,97 @@ router.post("/:id/confirmar", autenticar, async (request, response) => {
 
     const updated = await prisma.$transaction(async (tx) => {
       const movement = await tx.movimentacao.findFirst({
-        where: { id, destino_id: pid, tipo: "TRANSFERENCIA", status: STATUS.PENDING },
+        where: {
+          id,
+          destino_id: participantId,
+          tipo: "TRANSFERENCIA",
+          status: STATUS.PENDING,
+        },
       });
+
       if (!movement) {
-        throw new HttpError(404, "Transferência pendente não encontrada para a sua organização.");
+        throw new HttpError(
+          404,
+          "Transferência pendente não encontrada para a sua organização.",
+        );
       }
 
       const claimed = await tx.movimentacao.updateMany({
-        where: { id, status: STATUS.PENDING },
-        data: { status: STATUS.CONFIRMED, confirmado_em: new Date() },
+        where: {
+          id,
+          destino_id: participantId,
+          status: STATUS.PENDING,
+        },
+        data: {
+          status: STATUS.CONFIRMED,
+          confirmado_em: new Date(),
+        },
       });
+
       if (claimed.count !== 1) {
-        throw new HttpError(409, "Esta transferência já foi processada.");
+        throw new HttpError(
+          409,
+          "Esta transferência já foi processada.",
+        );
       }
 
       await tx.lote.update({
-        where: { id: movement.lote_id },
-        data: { responsavel_atual_id: pid, status: "ARMAZENADO" },
+        where: {
+          id: movement.lote_id,
+        },
+        data: {
+          responsavel_atual_id: participantId,
+          status: "ARMAZENADO",
+        },
       });
 
-      return tx.movimentacao.findUniqueOrThrow({ where: { id }, include });
+      return tx.movimentacao.findUniqueOrThrow({
+        where: {
+          id,
+        },
+        include,
+      });
     });
 
-    response.json({ transfer: toTransfer(updated, pid) });
+    response.json({
+      transfer: toTransfer(updated, participantId),
+    });
   } catch (error) {
-    handleError(error, response, "Não foi possível confirmar a transferência.");
+    handleError(
+      error,
+      response,
+      "Não foi possível confirmar a transferência.",
+    );
   }
 });
 
-// 3) Destino registra ocorrência -> lote volta para a origem
+// ======================================================
+// REGISTRAR OCORRÊNCIA
+// A custódia permanece com a origem.
+// ======================================================
+
 router.post("/:id/ocorrencia", autenticar, async (request, response) => {
   const parsed = issueSchema.safeParse(request.body);
+
   if (!parsed.success) {
-    response.status(400).json({ message: "Descreva a ocorrência (mínimo 3 caracteres)." });
+    response.status(400).json({
+      message: "Descreva a ocorrência (mínimo 3 caracteres).",
+    });
+
     return;
   }
 
   try {
     const user = await loadCurrentUser(request.usuario, response);
     if (!user?.participante_id) return;
-    const pid = user.participante_id;
+
+    const participantId = user.participante_id;
 
     if (roleFromProfile(user.perfil) === "VIEWER") {
-      response.status(403).json({ message: "Seu perfil não permite registrar ocorrências." });
+      response.status(403).json({
+        message: "Seu perfil não permite registrar ocorrências.",
+      });
+
       return;
     }
 
@@ -317,36 +621,72 @@ router.post("/:id/ocorrencia", autenticar, async (request, response) => {
 
     const updated = await prisma.$transaction(async (tx) => {
       const movement = await tx.movimentacao.findFirst({
-        where: { id, destino_id: pid, tipo: "TRANSFERENCIA", status: STATUS.PENDING },
+        where: {
+          id,
+          destino_id: participantId,
+          tipo: "TRANSFERENCIA",
+          status: STATUS.PENDING,
+        },
       });
+
       if (!movement) {
-        throw new HttpError(404, "Transferência pendente não encontrada para a sua organização.");
+        throw new HttpError(
+          404,
+          "Transferência pendente não encontrada para a sua organização.",
+        );
       }
 
       const claimed = await tx.movimentacao.updateMany({
-        where: { id, status: STATUS.PENDING },
+        where: {
+          id,
+          destino_id: participantId,
+          status: STATUS.PENDING,
+        },
         data: {
           status: STATUS.ISSUE,
+
           observacoes: movement.observacoes
             ? `${movement.observacoes}\n\nOcorrência: ${parsed.data.notes}`
             : `Ocorrência: ${parsed.data.notes}`,
         },
       });
+
       if (claimed.count !== 1) {
-        throw new HttpError(409, "Esta transferência já foi processada.");
+        throw new HttpError(
+          409,
+          "Esta transferência já foi processada.",
+        );
       }
 
+      // O responsável atual não muda.
+      // O lote continua com a origem.
+
       await tx.lote.update({
-        where: { id: movement.lote_id },
-        data: { status: "ARMAZENADO" }, // continua com a origem
+        where: {
+          id: movement.lote_id,
+        },
+        data: {
+          status: "ARMAZENADO",
+        },
       });
 
-      return tx.movimentacao.findUniqueOrThrow({ where: { id }, include });
+      return tx.movimentacao.findUniqueOrThrow({
+        where: {
+          id,
+        },
+        include,
+      });
     });
 
-    response.json({ transfer: toTransfer(updated, pid) });
+    response.json({
+      transfer: toTransfer(updated, participantId),
+    });
   } catch (error) {
-    handleError(error, response, "Não foi possível registrar a ocorrência.");
+    handleError(
+      error,
+      response,
+      "Não foi possível registrar a ocorrência.",
+    );
   }
 });
 
