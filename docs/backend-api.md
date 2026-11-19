@@ -35,12 +35,27 @@ definidos uma única vez em [`packages/shared`](../packages/shared/README.md)
 | Método | Endpoint | Descrição |
 | --- | --- | --- |
 | `GET` | `/api/health` | Verifica se a API está disponível. |
+| `POST` | `/api/participantes/cadastro` | Cadastra uma organização e seu usuário administrador no PostgreSQL. |
 | `POST` | `/api/workflows` | Cria um workflow com etapas ordenadas. |
 | `GET` | `/api/workflows/:workflowId` | Consulta um workflow. |
 | `POST` | `/api/workflows/:workflowId/participants` | Registra um participante e seu papel. |
 | `POST` | `/api/batches` | Cria um lote vinculado a um workflow. |
 | `POST` | `/api/batches/:batchId/transfers` | Registra uma transferência de custódia. |
 | `GET` | `/api/batches/:batchId/history` | Retorna o histórico de transferências do lote. |
+
+O cadastro valida os campos recebidos pelo formulário TraceBlock, confere o CNPJ e o aceite
+dos termos, armazena a senha com scrypt e cria organização e usuário na mesma transação Prisma.
+E-mails ou CNPJs já cadastrados retornam HTTP `409`; dados inválidos retornam HTTP `400`.
+
+## Convites por e-mail
+
+Para enviar convites, configure `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`,
+`SMTP_USER` com o endereço Gmail, `SMTP_PASS` com uma senha de app do Google e
+`SMTP_FROM` com esse mesmo endereço. A senha de app exige verificação em duas etapas;
+a senha normal da conta Google não funciona. Não inclua credenciais reais no repositório.
+Configure também `FRONTEND_URL` com a URL pública do frontend (em desenvolvimento,
+`http://localhost:5173`) para que o link do convite aponte para a aplicação correta.
+Na porta 587 a API exige STARTTLS; na porta 465 usa TLS direto.
 
 ## Exemplo de workflow
 
