@@ -122,20 +122,17 @@ export default function Overview({ goProducts }: OverviewProps) {
 
       <MetricsCard stats={stats}  transferCount={transferCount}/>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <MovementsCharts />
-        <LotsChart lotsData={lotsData} />
-      </div>
+      {/* Gráficos */}
+<div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+  <MovementsCharts />
+  <LotsChart lotsData={lotsData} />
+</div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <RecentActivities />
-        </div>
-
-        <div className="lg:col-span-1">
-          <BlockchainIntegrity />
-        </div>
-      </div>
+{/* Atividades e Blockchain */}
+<div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+  <RecentActivities />
+  <BlockchainIntegrity />
+</div>
     </div>
   );
 }

@@ -1,50 +1,13 @@
-import { ArrowRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowRight, ArrowLeftRight } from "lucide-react";
 
-type Activity = {
-  id: string;
-  product: string;
-  action: string;
-  responsible: string;
-  date: string;
-  status: "Confirmada" | "Pendente";
-};
+import { listarTransferencias } from "../../services/transferencias";
+import type { Transfer } from "../transfers/tranfers.type";
 
-const activities: Activity[] = [
-  {
-    id: "LT-0482",
-    product: "Café Arábica Premium",
-    action: "Transferência",
-    responsible: "TransLog Brasil",
-    date: "Hoje, 14:32",
-    status: "Confirmada",
-  },
-  {
-    id: "LT-0479",
-    product: "Cacau Orgânico",
-    action: "Armazenamento",
-    responsible: "CD Guarulhos",
-    date: "Hoje, 11:18",
-    status: "Confirmada",
-  },
-  {
-    id: "LT-0476",
-    product: "Algodão Fibra Longa",
-    action: "Entrega",
-    responsible: "Têxtil Paulista",
-    date: "Hoje, 09:45",
-    status: "Confirmada",
-  },
-  {
-    id: "LT-0471",
-    product: "Óleo Essencial de Laranja",
-    action: "Inspeção",
-    responsible: "Ana Ribeiro",
-    date: "Ontem, 17:06",
-    status: "Pendente",
-  },
-];
+type ActivityStatus = "Confirmada" | "Pendente";
 
-function StatusBadge({ status }: { status: Activity["status"] }) {
+
+function StatusBadge({status}: {status: ActivityStatus}) {
   const styles =
     status === "Confirmada"
       ? "bg-emerald-50 text-emerald-700"
@@ -57,7 +20,89 @@ function StatusBadge({ status }: { status: Activity["status"] }) {
   );
 }
 
+function formatActivityDate(date: string, time?: string) {
+  if (!date) return "—";
+
+  let parsedDate: Date;
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(date)) {
+    parsedDate = new Date(date);
+  } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
+    const [day, month, year] = date.split("/").map(Number);
+    parsedDate = new Date(year, month - 1, day);
+  } else {
+    return `${date} ${time ?? ""}`.trim();
+  }
+
+  if (Number.isNaN(parsedDate.getTime())) return date;
+
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  const isToday =
+    parsedDate.getDate() === today.getDate() &&
+    parsedDate.getMonth() === today.getMonth() &&
+    parsedDate.getFullYear() === today.getFullYear();
+
+  const isYesterday =
+    parsedDate.getDate() === yesterday.getDate() &&
+    parsedDate.getMonth() === yesterday.getMonth() &&
+    parsedDate.getFullYear() === yesterday.getFullYear();
+
+  const formattedTime = time || "";
+
+  if (isToday) return `Hoje, ${formattedTime}`.replace(/,\s*$/, "");
+  if (isYesterday) return `Ontem, ${formattedTime}`.replace(/,\s*$/, "");
+
+  return `${parsedDate.toLocaleDateString("pt-BR")} ${formattedTime}`.trim();
+}
+
+
 export default function RecentActivities() {
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadActivities() {
+      try {
+        const data = await listarTransferencias();
+
+        if (!cancelled) {
+          setTransfers(data);
+          setError(false);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar atividades recentes:", err);
+
+        if (!cancelled) {
+          setError(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadActivities();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const recentTransfers = [...transfers].sort((a, b) => {
+    const dateA = new Date(`${a.date} ${a.time || ""}`).getTime();
+    const dateB = new Date(`${b.date} ${b.time || ""}`).getTime();
+
+    return dateB - dateA;
+  })
+  .slice(0, 5);
+
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-5">
@@ -90,36 +135,65 @@ export default function RecentActivities() {
           </thead>
 
           <tbody className="divide-y divide-slate-100">
-            {activities.map((activity) => (
-              <tr
-                key={activity.id}
-                className="text-sm transition-colors hover:bg-slate-50"
-              >
-                <td className="px-5 py-4 font-medium text-blue-600">
-                  {activity.id}
-                </td>
-
-                <td className="px-5 py-4 font-medium text-slate-800">
-                  {activity.product}
-                </td>
-
-                <td className="px-5 py-4 text-slate-600">
-                  {activity.action}
-                </td>
-
-                <td className="px-5 py-4 text-slate-600">
-                  {activity.responsible}
-                </td>
-
-                <td className="px-5 py-4 text-slate-500">
-                  {activity.date}
-                </td>
-
-                <td className="px-5 py-4">
-                  <StatusBadge status={activity.status} />
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">
+                  Carregando movimentações...
                 </td>
               </tr>
-            ))}
+            ) : error ? (
+              <tr>
+                <td colSpan={6} className="px-5 py-10 text-center text-sm text-red-500">
+                  Não foi possível carregar as movimentações.
+                </td>
+              </tr>
+            ) : recentTransfers.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">
+                  Nenhuma movimentação registrada.
+                </td>
+              </tr>
+            ) : (
+              recentTransfers.map((transfer) => (
+                <tr
+                  key={transfer.rawId}
+                  className="text-sm transition-colors hover:bg-slate-50"
+                >
+                  <td className="px-5 py-4 font-medium text-blue-600">
+                    {transfer.lot}
+                  </td>
+
+                  <td className="px-5 py-4 font-medium text-slate-800">
+                    {transfer.product}
+                  </td>
+
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <ArrowLeftRight size={15} className="text-violet-500" />
+                      Transferência
+                    </div>
+                  </td>
+
+                  <td className="px-5 py-4 text-slate-600">
+                    {transfer.newOwner || "—"}
+                  </td>
+
+                  <td className="px-5 py-4 text-slate-500">
+                    {formatActivityDate(transfer.date, transfer.time)}
+                  </td>
+
+                  <td className="px-5 py-4">
+                    <StatusBadge
+                      status={
+                        transfer.status === "Confirmada"
+                          ? "Confirmada"
+                          : "Pendente"
+                      }
+                    />
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
