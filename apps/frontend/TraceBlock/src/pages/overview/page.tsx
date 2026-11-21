@@ -14,6 +14,8 @@ import {
 import { listarProdutos } from "../../services/produtos";
 import type { Product } from "../../components/products/Products.types";
 
+import { listarTransferencias } from "../../services/transferencias";
+
 interface OverviewProps {
   goProducts: () => void;
 }
@@ -21,6 +23,7 @@ interface OverviewProps {
 export default function Overview({ goProducts }: OverviewProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [stats, setStats] = useState<ProductStatsData | null>(null);
+  const [transferCount, setTransferCount] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +40,28 @@ export default function Overview({ goProducts }: OverviewProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+  let cancelled = false;
+
+  async function loadTransfers() {
+    try {
+      const data = await listarTransferencias();
+
+      if (!cancelled) {
+        setTransferCount(data.length);
+      }
+    } catch (error) {
+      console.error("Erro ao carregar transferências:", error);
+    }
+  }
+
+  void loadTransfers();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,7 +120,7 @@ export default function Overview({ goProducts }: OverviewProps) {
         </button>
       </div>
 
-      <MetricsCard stats={stats} />
+      <MetricsCard stats={stats}  transferCount={transferCount}/>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <MovementsCharts />

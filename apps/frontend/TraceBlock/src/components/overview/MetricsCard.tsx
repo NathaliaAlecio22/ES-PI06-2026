@@ -19,11 +19,12 @@ interface Metric {
 }
 
 interface MetricsCardProps {
-  stats: ProductStatsData | null; // null enquanto carrega ou se der erro
+  stats: ProductStatsData | null;
+  transferCount: number | null;
 }
 
-const formatNumber = (value?: number) =>
-  value === undefined ? "—" : value.toLocaleString("pt-BR");
+const formatNumber = (value?: number | null) =>
+  value == null ? "—" : value.toLocaleString("pt-BR");
 
 function MetricCard({ metric }: { metric: Metric }) {
   const Icon = metric.icon;
@@ -32,7 +33,10 @@ function MetricCard({ metric }: { metric: Metric }) {
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-slate-500">{metric.title}</p>
+          <p className="text-sm font-medium text-slate-500">
+            {metric.title}
+          </p>
+
           <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900">
             {metric.value}
           </h3>
@@ -48,7 +52,10 @@ function MetricCard({ metric }: { metric: Metric }) {
   );
 }
 
-export default function MetricsCard({ stats }: MetricsCardProps) {
+export default function MetricsCard({
+  stats,
+  transferCount,
+}: MetricsCardProps) {
   const metrics: Metric[] = [
     {
       title: "Total de lotes",
@@ -72,9 +79,8 @@ export default function MetricsCard({ stats }: MetricsCardProps) {
       iconBg: "bg-emerald-50",
     },
     {
-      // ainda sem backend: mantido fixo
       title: "Transferências",
-      value: "1.284",
+      value: formatNumber(transferCount),
       icon: ArrowLeftRight,
       iconColor: "text-violet-600",
       iconBg: "bg-violet-50",
@@ -87,7 +93,6 @@ export default function MetricsCard({ stats }: MetricsCardProps) {
       iconBg: "bg-orange-50",
     },
     {
-      // ainda sem backend: mantido fixo
       title: "Registros inválidos",
       value: "02",
       icon: ShieldAlert,
