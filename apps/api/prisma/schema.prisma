@@ -31,6 +31,11 @@ model lote {
   unidade_medida         String?       @db.VarChar(30)
   localizacao_origem     String?       @db.VarChar(200)
   status                 String        @default("ATIVO") @db.VarChar(30)
+  /// On-chain uint256 batch id (keccak256 of a UUID — same shape as the contract) once
+  /// this lot has been seeded on the organization's Workflow contract. Null until then.
+  chain_batch_id         BigInt?       @unique
+  /// Current on-chain step index, mirrored from the CustodyTransferred events.
+  current_step_index     Int           @default(0)
   produto                produto       @relation(fields: [produto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   participante           participante? @relation(fields: [responsavel_atual_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   usuario_cadastro       usuario?      @relation("lote_responsavel_cadastro", fields: [responsavel_cadastro_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -75,6 +80,12 @@ model participante {
   email                                              String?        @db.VarChar(150)
   tipo                                               String?        @db.VarChar(50)
   wallet_address                                     String?        @unique @db.VarChar(42)
+  /// Address of this organization's on-chain Workflow instance (deployed per org at
+  /// signup, or lazily on its first product — see src/chain/org-chain.ts).
+  workflow_address                                   String?        @db.VarChar(42)
+  /// The ordered workflow steps this organization defined at signup, as `WorkflowStep[]`
+  /// from @provenance/shared (name, requiredRole, specificationHash).
+  workflow_steps                                     Json?
   ativo                                              Boolean?       @default(true)
   chave_publica                                      String?        @unique @db.VarChar(132)
   lote                                               lote[]

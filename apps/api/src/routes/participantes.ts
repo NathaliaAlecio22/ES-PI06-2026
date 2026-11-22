@@ -3,7 +3,16 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma";
+import { revertReasonOf } from "../blockchain";
 import { hashPassword } from "../utils/password";
+import {
+  allocateAccountForNewOrganization,
+  buildWorkflowSteps,
+  chainRoleForTipo,
+  defaultSubsequentTypes,
+  deployWorkflowForOrganization,
+} from "../chain/org-chain";
+import { NoChainAccountAvailableError } from "../chain/hardhat-accounts";
 
 import { autenticar } from "../middlewares/auth.middleware";
 import { loadCurrentUser } from "../utils/session";
@@ -63,6 +72,13 @@ const registerSchema = z
     tipo: z.enum(participantTypes),
     cargo: z.string().trim().min(2).max(100),
     aceitouTermos: z.literal(true),
+    /**
+     * Ordered participant types for the custody steps AFTER the organization's own
+     * (step 0 is always the organization itself, holding its own role). Optional:
+     * skipped steps fall back to the documented default chain
+     * (Distribuidor → Transportadora → Varejista).
+     */
+    workflowSteps: z.array(z.enum(participantTypes)).max(3).default([]),
   })
   .refine((data) => data.senha === data.confirmarSenha, {
     path: ["confirmarSenha"],
@@ -94,7 +110,72 @@ participantesRouter.post("/cadastro", async (request, response) => {
     cnpj,
     tipo,
     cargo,
+    workflowSteps,
   } = parsed.data;
+
+  // Pre-check uniqueness before touching the chain: a P2002 after the workflow
+  // deployment would leave an orphaned on-chain contract (chain first, database
+  // second — docs/context.md §3.3; the local chain is resettable, but there is
+  // no reason to spend the deploy on a request that cannot succeed).
+  const existing = await prisma.participante.findFirst({
+    where: { OR: [{ email }, { identificacao: cnpj }] },
+    select: { id: true },
+  });
+  if (existing) {
+    response.status(409).json({
+      message: "Já existe um cadastro com este e-mail ou CNPJ.",
+    });
+    return;
+  }
+  const existingUsuario = await prisma.usuario.findUnique({ where: { email }, select: { id: true } });
+  if (existingUsuario) {
+    response.status(409).json({
+      message: "Já existe um cadastro com este e-mail.",
+    });
+    return;
+  }
+
+  // On-chain identity: one of the 10 standard Hardhat accounts (see
+  // src/chain/hardhat-accounts.ts — PoC-only, local-network-only).
+  let account: Awaited<ReturnType<typeof allocateAccountForNewOrganization>>;
+  try {
+    account = await allocateAccountForNewOrganization();
+  } catch (error) {
+    if (error instanceof NoChainAccountAvailableError) {
+      response.status(503).json({ message: error.message });
+      return;
+    }
+    throw error;
+  }
+
+  // The organization's own workflow: step 0 is its own role; the admin chose the
+  // subsequent steps at signup (or the documented defaults apply).
+  const ownRole = chainRoleForTipo(tipo);
+  const steps = buildWorkflowSteps({
+    organization: nomeOrganizacao,
+    ownRole,
+    subsequentTypes: workflowSteps.length > 0 ? workflowSteps : defaultSubsequentTypes(),
+  });
+
+  let deployed: Awaited<ReturnType<typeof deployWorkflowForOrganization>>;
+  try {
+    deployed = await deployWorkflowForOrganization({
+      organization: nomeOrganizacao,
+      ownRole,
+      steps,
+      adminPrivateKey: account.privateKey,
+    });
+  } catch (error) {
+    const revertReason = revertReasonOf(error);
+    const detail = revertReason ?? (error instanceof Error ? error.message : String(error));
+    response.status(502).json({
+      message:
+        "Não foi possível registrar a organização na blockchain. Verifique se o nó local " +
+        "está ativo e o WorkflowFactory implantado (contracts/README.md).",
+      detail,
+    });
+    return;
+  }
 
   try {
     const senhaHash = await hashPassword(senha);
@@ -106,6 +187,9 @@ participantesRouter.post("/cadastro", async (request, response) => {
           email,
           tipo,
           ativo: true,
+          wallet_address: account.address,
+          workflow_address: deployed.workflowAddress,
+          workflow_steps: deployed.steps,
         },
       });
 
@@ -129,7 +213,11 @@ participantesRouter.post("/cadastro", async (request, response) => {
 
     response.status(201).json({
       message: "Empresa cadastrada com sucesso! Você já pode acessar o TraceBlock.",
-      data: result,
+      data: {
+        ...result,
+        walletAddress: account.address,
+        workflowAddress: deployed.workflowAddress,
+      },
     });
   } catch (error) {
     if (
@@ -142,6 +230,9 @@ participantesRouter.post("/cadastro", async (request, response) => {
       return;
     }
 
+    // The workflow stays deployed on the (resettable local) chain while the database
+    // write failed — accepted PoC trade-off; the account slot stays unused until the
+    // local chain resets, because nothing references it in the database.
     console.error("Erro ao cadastrar participante:", error);
     response.status(500).json({
       message: "Não foi possível concluir o cadastro.",
