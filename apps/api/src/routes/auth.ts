@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
+import { env } from "../config/env";
 import { verifyPassword } from "../utils/password.js";
 import { gerarToken, verificarToken } from "../utils/jwt.js";
 
@@ -16,13 +17,7 @@ function gerarCodigo(): string {
 }
 
 function gerarHashCodigo(codigo: string): string {
-  const secret = process.env.RESET_CODE_SECRET;
-
-  if (!secret) {
-    throw new Error("RESET_CODE_SECRET não configurado.");
-  }
-
-  return createHmac("sha256", secret)
+  return createHmac("sha256", env.RESET_CODE_SECRET)
     .update(codigo)
     .digest("hex");
 }

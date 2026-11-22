@@ -1,11 +1,13 @@
 import nodemailer from "nodemailer";
 
+import { env } from "../config/env";
+
 function createTransporter() {
-  const host = process.env.SMTP_HOST?.trim();
-  const port = Number(process.env.SMTP_PORT);
-  const user = process.env.SMTP_USER?.trim();
-  const pass = process.env.SMTP_PASS?.replace(/\s/g, "");
-  const from = process.env.SMTP_FROM?.trim() || user;
+  const host = env.SMTP_HOST?.trim();
+  const port = env.SMTP_PORT ?? 587;
+  const user = env.SMTP_USER?.trim();
+  const pass = env.SMTP_PASS?.replace(/\s/g, "");
+  const from = env.SMTP_FROM?.trim() || user;
 
   if (!host || !user || !pass || !from) {
     throw new Error(

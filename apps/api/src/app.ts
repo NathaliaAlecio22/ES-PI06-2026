@@ -27,9 +27,6 @@ import produtosRouter from "./routes/produtos";
 import { participantesRouter } from "./routes/participantes";
 
 import authRouter from "./routes/auth";
-
-import userRouter from "./routes/user";
-
 import transferenciasRouter from "./routes/transferencias";
 
 import custodiaRouter from "./routes/custodia";
@@ -104,10 +101,7 @@ import type { Role } from "@provenance/shared";
 
 export const app = express();
 
-
-
-const allowedOrigins = (process.env.CORS_ORIGIN ?? "http://localhost:5173")
-
+const allowedOrigins = (env.CORS_ORIGIN ?? "http://localhost:5173")
   .split(",")
 
   .map((origin) => origin.trim())
@@ -179,18 +173,31 @@ app.use("/api/produtos", produtosRouter);
 app.use("/api/organizacao", organizacaoRouter);
 
 app.use("/api/auth", authRouter);
-
-app.use("/api/auth", userRouter);
-
 app.use("/api/transferencias", transferenciasRouter);
-
-app.use(["/api/workflows", "/api/batches"], autenticar);
-
 app.use("/api/custodia", custodiaRouter);
-
 app.use("/api/relatorios", relatoriosRouter);
 
+/**
+ * Application auth gates the blockchain-backed admin surface (docs/requirements.md FR-14:
+ * application authentication does not replace on-chain checks — the contract remains the
+ * authority for role/custody rules; this only stops anonymous API access to mutating routes).
+ * Read-only lookups stay public for the documented auditor/consumer actor.
+ */
+app.use("/api/workflows", (request, response, next) => {
+  if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") {
+    next();
+    return;
+  }
+  autenticar(request, response, next);
+});
 
+app.use("/api/batches", (request, response, next) => {
+  if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") {
+    next();
+    return;
+  }
+  autenticar(request, response, next);
+});
 
 function notFound(response: Response): void {
 

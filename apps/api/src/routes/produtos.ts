@@ -1,10 +1,9 @@
 import { Prisma } from "@prisma/client";
-import { Router, type Response } from "express";
+import { Router } from "express";
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma";
 import { autenticar } from "../middlewares/auth.middleware";
-import type { JwtPayload } from "../utils/jwt";
 import {
   createBatch,
   deriveLotBatchId,
@@ -13,6 +12,7 @@ import {
   isWorkflowFactoryVersionError,
 } from "../blockchain";
 import { env } from "../config/env";
+import { loadCurrentUser } from "../utils/session";
 
 const createProductSchema = z
   .object({
@@ -105,50 +105,9 @@ function toProductRow(product: {
   }));
 }
 
-async function loadAuthenticatedUser(
-  payload: JwtPayload | undefined,
-  response: Response,
-) {
-  if (!payload) {
-    response.status(401).json({ message: "Autenticação necessária." });
-    return null;
-  }
-
-  let userId: bigint;
-  try {
-    userId = BigInt(payload.usuarioId);
-  } catch {
-    response.status(401).json({ message: "Sessão inválida ou expirada." });
-    return null;
-  }
-
-  const usuario = await prisma.usuario.findUnique({
-    where: { id: userId },
-    include: { participante: true },
-  });
-
-  if (
-    !usuario ||
-    !usuario.participante_id ||
-    usuario.participante_id.toString() !== payload.participanteId
-  ) {
-    response.status(401).json({ message: "Sessão inválida ou expirada." });
-    return null;
-  }
-
-  if (!usuario.participante?.ativo) {
-    response.status(403).json({
-      message: "Sua organização está desativada. Entre em contato com o suporte.",
-    });
-    return null;
-  }
-
-  return usuario;
-}
-
 router.get("/", autenticar, async (request, response) => {
   try {
-    const usuario = await loadAuthenticatedUser(request.usuario, response);
+    const usuario = await loadCurrentUser(request.usuario, response);
     if (!usuario?.participante_id) return;
 
     const products = await prisma.produto.findMany({
@@ -173,7 +132,7 @@ router.get("/", autenticar, async (request, response) => {
 
 router.get("/stats", autenticar, async (request, response) => {
   try {
-    const usuario = await loadAuthenticatedUser(request.usuario, response);
+    const usuario = await loadCurrentUser(request.usuario, response);
     if (!usuario?.participante_id) return;
 
     const lots = await prisma.lote.findMany({
@@ -216,7 +175,7 @@ router.post("/", autenticar, async (request, response) => {
   }
 
   try {
-    const usuario = await loadAuthenticatedUser(request.usuario, response);
+    const usuario = await loadCurrentUser(request.usuario, response);
     if (!usuario?.participante_id) return;
 
     const input: CreatedProductInput = parsed.data;

@@ -10,6 +10,7 @@ import {
   getWorkflowAdmin,
 } from "../src/blockchain";
 import { env } from "../src/config/env";
+import { gerarToken } from "../src/utils/jwt";
 import { batches, resetStore, workflows } from "../src/store";
 // Same supertest API, instrumented: every request/response of the run is also written to
 // logs/api-run.log, grouped by test — the transcript of what the API actually returned.
@@ -30,6 +31,18 @@ const SIGNATURE = `0x${"a3".repeat(65)}`;
 // Ids used by seedStore below (the in-memory mirror seeded directly, without a chain).
 const WORKFLOW_ID = 1n;
 const BATCH_ID = 2n;
+
+/**
+ * The mutating /api/workflows and /api/batches routes sit behind `autenticar` (app.ts):
+ * the middleware verifies the JWT signature only — no database row is consulted — so any
+ * token signed with the configured JWT_SECRET authenticates these low-level routes.
+ */
+const authToken = gerarToken({
+  usuarioId: "1",
+  participanteId: "1",
+  perfil: "ADMINISTRADOR",
+});
+const authHeader = { Authorization: `Bearer ${authToken}` };
 
 function workflowPayload() {
   return {
@@ -141,7 +154,7 @@ describe("Provenance API (validação local)", () => {
   });
 
   it("rejects invalid workflow data", async () => {
-    const response = await request(app).post("/api/workflows").send({ name: "" });
+    const response = await request(app).post("/api/workflows").set(authHeader).send({ name: "" });
 
     expect(response.status).toBe(400);
   });
@@ -150,7 +163,7 @@ describe("Provenance API (validação local)", () => {
     const payload = workflowPayload();
     payload.steps[0].requiredRole = "producer";
 
-    const response = await request(app).post("/api/workflows").send(payload);
+    const response = await request(app).post("/api/workflows").set(authHeader).send(payload);
 
     expect(response.status).toBe(400);
     expect(response.body.details).toHaveLength(1);
@@ -169,7 +182,7 @@ describe("Provenance API (validação local)", () => {
     const payload = workflowPayload();
     payload.steps[1].assignee = PRODUCER_ADDRESS;
 
-    const response = await request(app).post("/api/workflows").send(payload);
+    const response = await request(app).post("/api/workflows").set(authHeader).send(payload);
 
     expect(response.status).toBe(400);
   });
@@ -181,7 +194,10 @@ describe("Provenance API (validação local)", () => {
     const unknown = await request(app).get(`/api/workflows/${"9".repeat(77)}`);
     expect(unknown.status).toBe(404);
 
-    const unknownBatch = await request(app).post(`/api/batches/${"9".repeat(77)}/transfers`).send(transferPayload());
+    const unknownBatch = await request(app)
+      .post(`/api/batches/${"9".repeat(77)}/transfers`)
+      .set(authHeader)
+      .send(transferPayload());
     expect(unknownBatch.status).toBe(404);
   });
 
@@ -189,6 +205,7 @@ describe("Provenance API (validação local)", () => {
     seedStore();
     const response = await request(app)
       .post(`/api/workflows/${WORKFLOW_ID}/participants`)
+      .set(authHeader)
       .send({ address: "0xadmin", role: "manufacturer" });
 
     expect(response.status).toBe(400);
@@ -198,6 +215,7 @@ describe("Provenance API (validação local)", () => {
     seedStore();
     const response = await request(app)
       .post(`/api/batches/${BATCH_ID}/transfers`)
+      .set(authHeader)
       .send(transferPayload({ from: CARRIER_ADDRESS })); // not the current custodian
 
     expect(response.status).toBe(409);
@@ -205,14 +223,20 @@ describe("Provenance API (validação local)", () => {
 
   it("rejects transfers of a compromised batch", async () => {
     seedStore("COMPROMISED");
-    const response = await request(app).post(`/api/batches/${BATCH_ID}/transfers`).send(transferPayload());
+    const response = await request(app)
+      .post(`/api/batches/${BATCH_ID}/transfers`)
+      .set(authHeader)
+      .send(transferPayload());
 
     expect(response.status).toBe(409);
   });
 
   it("rejects signatures that cannot be recovered", async () => {
     seedStore();
-    const response = await request(app).post(`/api/batches/${BATCH_ID}/transfers`).send(transferPayload());
+    const response = await request(app)
+      .post(`/api/batches/${BATCH_ID}/transfers`)
+      .set(authHeader)
+      .send(transferPayload());
 
     expect(response.status).toBe(401);
   });
@@ -231,9 +255,22 @@ describe("Provenance API (validação local)", () => {
     });
     const signature = await ethers.Wallet.createRandom().signMessage(ethers.getBytes(digest));
 
-    const response = await request(app).post(`/api/batches/${BATCH_ID}/transfers`).send(transferPayload({ signature }));
+    const response = await request(app)
+      .post(`/api/batches/${BATCH_ID}/transfers`)
+      .set(authHeader)
+      .send(transferPayload({ signature }));
 
     expect(response.status).toBe(401);
+  });
+
+  it("rejects unauthenticated mutations on the blockchain-backed routes", async () => {
+    const noToken = await request(app).post("/api/workflows").send(workflowPayload());
+    expect(noToken.status).toBe(401);
+
+    // Reads stay public for the auditor/consumer actor (docs/requirements.md §3) —
+    // unknown batch, but the auth middleware must not be the one rejecting it.
+    const readOk = await request(app).get("/api/batches/1/history");
+    expect(readOk.status).toBe(404);
   });
 });
 
@@ -249,7 +286,7 @@ describe("Provenance API (integração on-chain)", () => {
   });
 
   it("deploys a workflow through the factory and exposes its chain address", async () => {
-    const created = await request(app).post("/api/workflows").send(workflowPayload());
+    const created = await request(app).post("/api/workflows").set(authHeader).send(workflowPayload());
 
     expect(created.status).toBe(201);
     // JSON has no bigint: ids travel as decimal strings (see app.ts's json replacer).
@@ -263,16 +300,18 @@ describe("Provenance API (integração on-chain)", () => {
   });
 
   it("registers a participant on-chain and rejects malformed addresses", async () => {
-    const workflow = await request(app).post("/api/workflows").send(workflowPayload());
+    const workflow = await request(app).post("/api/workflows").set(authHeader).send(workflowPayload());
     const participant = ethers.Wallet.createRandom();
 
     const invalid = await request(app)
       .post(`/api/workflows/${workflow.body.id}/participants`)
+      .set(authHeader)
       .send({ address: "0xadmin", role: "manufacturer" });
     expect(invalid.status).toBe(400);
 
     const created = await request(app)
       .post(`/api/workflows/${workflow.body.id}/participants`)
+      .set(authHeader)
       .send({ address: participant.address, role: "manufacturer" });
 
     expect(created.status).toBe(201);
@@ -283,20 +322,21 @@ describe("Provenance API (integração on-chain)", () => {
   });
 
   it("creates a batch on-chain and refuses an unauthorized first custodian", async () => {
-    const workflow = await request(app).post("/api/workflows").send(workflowPayload());
+    const workflow = await request(app).post("/api/workflows").set(authHeader).send(workflowPayload());
     const manufacturer = ethers.Wallet.createRandom();
     const registered = await request(app)
       .post(`/api/workflows/${workflow.body.id}/participants`)
+      .set(authHeader)
       .send({ address: manufacturer.address, role: "manufacturer" });
     expect(registered.status).toBe(201);
 
-    const unauthorized = await request(app).post("/api/batches").send({
+    const unauthorized = await request(app).post("/api/batches").set(authHeader).send({
       workflowId: workflow.body.id,
       currentCustodian: ethers.Wallet.createRandom().address, // never registered
     });
     expect(unauthorized.status).toBe(409);
 
-    const created = await request(app).post("/api/batches").send({
+    const created = await request(app).post("/api/batches").set(authHeader).send({
       workflowId: workflow.body.id,
       currentCustodian: manufacturer.address,
     });
@@ -315,7 +355,7 @@ describe("Provenance API (integração on-chain)", () => {
     manufacturer: ReturnType<typeof ethers.Wallet.createRandom>;
     carrier: ReturnType<typeof ethers.Wallet.createRandom>;
   }> {
-    const workflow = await request(app).post("/api/workflows").send(workflowPayload());
+    const workflow = await request(app).post("/api/workflows").set(authHeader).send(workflowPayload());
     expect(workflow.status).toBe(201);
     const manufacturer = ethers.Wallet.createRandom();
     const carrier = ethers.Wallet.createRandom();
@@ -325,10 +365,11 @@ describe("Provenance API (integração on-chain)", () => {
     ]) {
       const registered = await request(app)
         .post(`/api/workflows/${workflow.body.id}/participants`)
+        .set(authHeader)
         .send(participant);
       expect(registered.status).toBe(201);
     }
-    const batch = await request(app).post("/api/batches").send({
+    const batch = await request(app).post("/api/batches").set(authHeader).send({
       workflowId: workflow.body.id,
       currentCustodian: manufacturer.address,
     });
@@ -359,15 +400,18 @@ describe("Provenance API (integração on-chain)", () => {
       ethers.getBytes(transferDigest(workflowAddress, batchId, carrier.address, dataHash)),
     );
 
-    const transfer = await request(app).post(`/api/batches/${batchId}/transfers`).send({
-      from: manufacturer.address,
-      to: carrier.address,
-      stepIndex: 0,
-      locationReference: "Porto de Santos",
-      conditionReferences: ["sensor-log-1"],
-      deliverableHash: DELIVERABLE_HASH,
-      signature,
-    });
+    const transfer = await request(app)
+      .post(`/api/batches/${batchId}/transfers`)
+      .set(authHeader)
+      .send({
+        from: manufacturer.address,
+        to: carrier.address,
+        stepIndex: 0,
+        locationReference: "Porto de Santos",
+        conditionReferences: ["sensor-log-1"],
+        deliverableHash: DELIVERABLE_HASH,
+        signature,
+      });
     expect(transfer.status).toBe(201);
     expect(transfer.body.to).toBe(carrier.address);
     expect(transfer.body.locationReference).toBe("Porto de Santos");
@@ -383,13 +427,16 @@ describe("Provenance API (integração on-chain)", () => {
     expect(state.currentStepIndex).toBe(1);
 
     // FR-05: the batch now sits on the final step of this two-step workflow.
-    const atFinalStep = await request(app).post(`/api/batches/${batchId}/transfers`).send({
-      from: carrier.address,
-      to: manufacturer.address,
-      stepIndex: 1,
-      deliverableHash: DELIVERABLE_HASH,
-      signature: SIGNATURE,
-    });
+    const atFinalStep = await request(app)
+      .post(`/api/batches/${batchId}/transfers`)
+      .set(authHeader)
+      .send({
+        from: carrier.address,
+        to: manufacturer.address,
+        stepIndex: 1,
+        deliverableHash: DELIVERABLE_HASH,
+        signature: SIGNATURE,
+      });
     expect(atFinalStep.status).toBe(409);
   });
 
@@ -401,13 +448,16 @@ describe("Provenance API (integração on-chain)", () => {
       ethers.getBytes(transferDigest(workflowAddress, batchId, carrier.address, dataHash)),
     );
 
-    const response = await request(app).post(`/api/batches/${batchId}/transfers`).send({
-      from: manufacturer.address,
-      to: carrier.address,
-      stepIndex: 0,
-      deliverableHash: DELIVERABLE_HASH,
-      signature,
-    });
+    const response = await request(app)
+      .post(`/api/batches/${batchId}/transfers`)
+      .set(authHeader)
+      .send({
+        from: manufacturer.address,
+        to: carrier.address,
+        stepIndex: 0,
+        deliverableHash: DELIVERABLE_HASH,
+        signature,
+      });
 
     expect(response.status).toBe(401);
   });
@@ -421,13 +471,16 @@ describe("Provenance API (integração on-chain)", () => {
       ethers.getBytes(transferDigest(workflowAddress, batchId, intruder.address, dataHash)),
     );
 
-    const response = await request(app).post(`/api/batches/${batchId}/transfers`).send({
-      from: manufacturer.address,
-      to: intruder.address,
-      stepIndex: 0,
-      deliverableHash: DELIVERABLE_HASH,
-      signature,
-    });
+    const response = await request(app)
+      .post(`/api/batches/${batchId}/transfers`)
+      .set(authHeader)
+      .send({
+        from: manufacturer.address,
+        to: intruder.address,
+        stepIndex: 0,
+        deliverableHash: DELIVERABLE_HASH,
+        signature,
+      });
 
     expect(response.status).toBe(409);
   });

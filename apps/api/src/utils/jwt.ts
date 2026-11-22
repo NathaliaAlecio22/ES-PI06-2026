@@ -1,20 +1,6 @@
-import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
 
-dotenv.config();
-
-import jwt from 'jsonwebtoken';
-
-function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET;
-
-  if (!secret) {
-    throw new Error("JWT_SECRET não foi definido no arquivo .env");
-  }
-
-  return secret;
-}
-
-const JWT_SECRET = getJwtSecret();
+import { env } from "../config/env";
 
 export type JwtPayload = {
   usuarioId: string;
@@ -23,7 +9,7 @@ export type JwtPayload = {
 };
 
 export function gerarToken(payload: JwtPayload): string {
-  return jwt.sign(payload, JWT_SECRET, {
+  return jwt.sign(payload, env.JWT_SECRET, {
     expiresIn: "8h",
     issuer: "traceblock-api",
   });
@@ -45,7 +31,7 @@ function isJwtPayload(value: unknown): value is JwtPayload {
 }
 
 export function verificarToken(token: string): JwtPayload {
-  const payload: unknown = jwt.verify(token, JWT_SECRET, {
+  const payload: unknown = jwt.verify(token, env.JWT_SECRET, {
     issuer: "traceblock-api",
   });
 

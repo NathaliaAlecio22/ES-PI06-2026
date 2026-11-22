@@ -9,7 +9,9 @@ import { env } from "../config/env";
 import { autenticar } from "../middlewares/auth.middleware";
 import { enviarConviteUsuario } from "../service/email.service";
 import { hashPassword } from "../utils/password.js";
+import { env } from "../config/env";
 import type { JwtPayload } from "../utils/jwt";
+import { loadCurrentUser, roleFromProfile } from "../utils/session";
 
 const userRoles = ["ADMIN", "OPERATOR", "VIEWER"] as const;
 const roleToProfile = {
@@ -104,52 +106,6 @@ router.patch("/carteira", autenticar, async (request, response) => {
 
 function hashInviteToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
-}
-
-function roleFromProfile(profile: string): (typeof userRoles)[number] {
-  if (profile === "ADMINISTRADOR" || profile === "ADMIN") return "ADMIN";
-  if (profile === "VISUALIZADOR" || profile === "VIEWER") return "VIEWER";
-  return "OPERATOR";
-}
-
-async function loadCurrentUser(
-  payload: JwtPayload | undefined,
-  response: Response,
-) {
-  if (!payload) {
-    response.status(401).json({ message: "Autenticação necessária." });
-    return null;
-  }
-
-  let userId: bigint;
-  try {
-    userId = BigInt(payload.usuarioId);
-  } catch {
-    response.status(401).json({ message: "Sessão inválida ou expirada." });
-    return null;
-  }
-
-  const user = await prisma.usuario.findUnique({
-    where: { id: userId },
-    include: { participante: true },
-  });
-
-  if (
-    !user ||
-    !user.ativo ||
-    !user.participante_id ||
-    user.participante_id.toString() !== payload.participanteId
-  ) {
-    response.status(401).json({ message: "Sessão inválida ou expirada." });
-    return null;
-  }
-
-  if (!user.participante?.ativo) {
-    response.status(403).json({ message: "A organização está desativada." });
-    return null;
-  }
-
-  return user;
 }
 
 async function loadAdministrator(
@@ -366,9 +322,7 @@ router.post("/usuarios/convites", autenticar, async (request, response) => {
       },
     });
 
-    const frontendUrl = (process.env.FRONTEND_URL ?? "http://localhost:5173")
-      .replace(/\/$/, "");
-    const inviteLink = `${frontendUrl}/aceitar-convite?token=${encodeURIComponent(token)}`;
+    const inviteLink = `${env.FRONTEND_URL.replace(/\/$/, "")}/aceitar-convite?token=${encodeURIComponent(token)}`;
 
     try {
       await enviarConviteUsuario(
