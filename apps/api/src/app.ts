@@ -16,7 +16,7 @@ import {
 
 } from "@provenance/shared";
 
-
+import relatoriosRouter from "./routes/relatorios";
 
 import { prisma } from "./lib/prisma";
 
@@ -191,6 +191,8 @@ app.use("/api/transferencias", transferenciasRouter);
 app.use(["/api/workflows", "/api/batches"], autenticar);
 
 app.use("/api/custodia", custodiaRouter);
+
+app.use("/api/relatorios", relatoriosRouter);
 
 
 
