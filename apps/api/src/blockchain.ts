@@ -146,6 +146,7 @@ export function hashSpecification(specification: string): string {
 
 let cachedProvider: ethers.JsonRpcProvider | undefined;
 let cachedSigner: ethers.Wallet | undefined;
+const cachedSignersByKey = new Map<string, ethers.Wallet>();
 
 /** Shared read-only JSON-RPC provider, pinned to the configured chain id. */
 export function getProvider(): ethers.JsonRpcProvider {
@@ -186,28 +187,52 @@ export function getSigner(): ethers.Wallet {
   return cachedSigner;
 }
 
-/** Test/shutdown helper: drop cached provider+signer so the next call reconstructs them. */
+/**
+ * Signer for a specific private key — the per-organization custodial signer
+ * (docs/poc-checklist.md): each organization acts on-chain through its own
+ * Hardhat account, so every write below accepts an optional `signerPrivateKey`
+ * and falls back to the configured global signer when omitted.
+ */
+export function getSignerForKey(privateKey: string): ethers.Wallet {
+  let wallet = cachedSignersByKey.get(privateKey);
+  if (!wallet) {
+    wallet = new ethers.Wallet(privateKey, getProvider());
+    cachedSignersByKey.set(privateKey, wallet);
+  }
+  return wallet;
+}
+
+function runnerFor(signerPrivateKey?: string): ethers.Wallet {
+  return signerPrivateKey ? getSignerForKey(signerPrivateKey) : getSigner();
+}
+
+/** Test/shutdown helper: drop cached provider+signers so the next call reconstructs them. */
 export function resetConnections(): void {
   cachedProvider?.destroy();
   cachedProvider = undefined;
   cachedSigner = undefined;
+  cachedSignersByKey.clear();
 }
 
 // ---------------------------------------------------------------------------
 // Contract handles
 // ---------------------------------------------------------------------------
 
-export function getFactoryContract(withSigner = false): ethers.Contract {
+export function getFactoryContract(withSigner = false, signerPrivateKey?: string): ethers.Contract {
   const address = env.WORKFLOW_FACTORY_ADDRESS;
   if (!address) {
     throw new Error("WORKFLOW_FACTORY_ADDRESS is not configured");
   }
-  const runner = withSigner ? getSigner() : getProvider();
+  const runner = withSigner ? runnerFor(signerPrivateKey) : getProvider();
   return new ethers.Contract(assertAddress(address, "WORKFLOW_FACTORY_ADDRESS"), WORKFLOW_FACTORY_ABI, runner);
 }
 
-export function getWorkflowContract(workflowAddress: string, withSigner = false): ethers.Contract {
-  const runner = withSigner ? getSigner() : getProvider();
+export function getWorkflowContract(
+  workflowAddress: string,
+  withSigner = false,
+  signerPrivateKey?: string,
+): ethers.Contract {
+  const runner = withSigner ? runnerFor(signerPrivateKey) : getProvider();
   return new ethers.Contract(assertAddress(workflowAddress, "workflowAddress"), WORKFLOW_ABI, runner);
 }
 
@@ -293,13 +318,15 @@ function findEventLog(
 // ---------------------------------------------------------------------------
 
 /**
- * Deploys a new `Workflow` instance via the factory. `msg.sender` (the configured signer)
+ * Deploys a new `Workflow` instance via the factory. The caller (the signer — the
+ * configured global one, or `signerPrivateKey` for a per-organization custodial signer)
  * becomes that instance's admin automatically.
  */
 export async function createWorkflow(
   organizationId: bigint,
   name: string,
   steps: WorkflowStep[],
+  signerPrivateKey?: string,
 ): Promise<{ workflowAddress: string; admin: string; txHash: string; blockNumber: number }> {
   if (organizationId <= 0n) {
     throw new Error("organizationId must be positive");
@@ -315,7 +342,7 @@ export async function createWorkflow(
     assertAddress(step.assignee, "step.assignee");
   }
 
-  const factory = getFactoryContract(true);
+  const factory = getFactoryContract(true, signerPrivateKey);
   const receipt = await sendAndWait("createWorkflow", () =>
     factory.createWorkflow(
       organizationId,
@@ -372,12 +399,13 @@ export async function registerParticipant(
   workflowAddress: string,
   participant: string,
   role: Role,
+  signerPrivateKey?: string,
 ): Promise<{ txHash: string; blockNumber: number }> {
   assertAddress(participant, "participant");
   if (role === "none") {
     throw new Error("Cannot register a participant with the role 'none'");
   }
-  const contract = getWorkflowContract(workflowAddress, true);
+  const contract = getWorkflowContract(workflowAddress, true, signerPrivateKey);
   const receipt = await sendAndWait("registerParticipant", () =>
     contract.registerParticipant(participant, roleToChainId(role)),
   );
@@ -388,9 +416,10 @@ export async function registerParticipant(
 export async function revokeParticipant(
   workflowAddress: string,
   participant: string,
+  signerPrivateKey?: string,
 ): Promise<{ txHash: string; blockNumber: number }> {
   assertAddress(participant, "participant");
-  const contract = getWorkflowContract(workflowAddress, true);
+  const contract = getWorkflowContract(workflowAddress, true, signerPrivateKey);
   const receipt = await sendAndWait("revokeParticipant", () => contract.revokeParticipant(participant));
   return { txHash: receipt.hash, blockNumber: receipt.blockNumber };
 }
@@ -400,25 +429,30 @@ export async function createBatch(
   workflowAddress: string,
   batchId: bigint,
   initialCustodian: string,
+  signerPrivateKey?: string,
 ): Promise<{ txHash: string; blockNumber: number }> {
   assertAddress(initialCustodian, "initialCustodian");
-  const contract = getWorkflowContract(workflowAddress, true);
+  const contract = getWorkflowContract(workflowAddress, true, signerPrivateKey);
   const receipt = await sendAndWait("createBatch", () => contract.createBatch(batchId, initialCustodian));
   return { txHash: receipt.hash, blockNumber: receipt.blockNumber };
 }
 
 /**
- * FR-02..FR-07: records a custody transfer.
+ * FR-02..FR-07: records a custody transfer. The signature inside `params` must come from
+ * the batch's current custodian; `signerPrivateKey` is only the *transaction* signer
+ * (whoever pays gas/relays the call) — the contract authorizes the transfer itself
+ * through the recovered signature, not through the transaction sender.
  */
 export async function transferCustody(
   workflowAddress: string,
   params: TransferCustodyParams,
+  signerPrivateKey?: string,
 ): Promise<{ txHash: string; blockNumber: number; event: CustodyTransferredEvent }> {
   assertAddress(params.to, "to");
   assertBytes32(params.deliverableHash, "deliverableHash");
   assertBytes32(params.dataHash, "dataHash");
 
-  const contract = getWorkflowContract(workflowAddress, true);
+  const contract = getWorkflowContract(workflowAddress, true, signerPrivateKey);
   const receipt = await sendAndWait("transferCustody", () =>
     contract.transferCustody(params.batchId, params.to, params.deliverableHash, params.dataHash, params.signature),
   );
@@ -448,9 +482,10 @@ export async function transferCustody(
 export async function reportCondition(
   workflowAddress: string,
   params: ReportConditionParams,
+  signerPrivateKey?: string,
 ): Promise<{ txHash: string; blockNumber: number }> {
   assertBytes32(params.conditionKey, "conditionKey");
-  const contract = getWorkflowContract(workflowAddress, true);
+  const contract = getWorkflowContract(workflowAddress, true, signerPrivateKey);
   const receipt = await sendAndWait("reportCondition", () =>
     contract.reportCondition(params.batchId, params.conditionKey, params.value, params.threshold, params.timestamp),
   );
