@@ -2,93 +2,176 @@
 
 Derived from [`docs/requirements.md`](requirements.md), [`docs/context.md`](context.md), and
 [`docs/architecture.md`](architecture.md). Status was verified directly against the code on
-`app/api` (post-rebase onto `master`), not assumed from docs alone. Re-check this list whenever
-a requirement or its backing code changes — it will go stale otherwise, same as any other doc.
+`app/api`, not assumed from docs alone (built it, generated the Prisma client, ran the test
+suites). Re-check this list whenever a requirement or its backing code changes.
 
-Legend: `[x]` done and verified in code · `[~]` partially done (see note) · `[ ]` not started.
+Legend: `[x]` done and verified · `[~]` partially done (see note) · `[ ]` not started.
 
-## 1. Smart contracts (`contracts/`)
+> **Update (2026-11-22):** `app/api` was re-synced from origin (the branch had been rebased
+> upstream — same logical history up to the previous "Organization and admin page" merge, just
+> new commit hashes — plus ~10 genuinely new commits on top: a working custody-transfer flow,
+> an email-invite user-management system, and chart/UI polish). This revision re-verifies
+> everything against that state. Per instruction, **nothing in the codebase was changed** while
+> producing this update — findings below are notes only, split into "needs consolidation"
+> (duplicated/drifting but not broken) and "blatant deviations" (verified bugs/regressions or
+> architecture-contradicting decisions).
 
-- [x] FR-01 — Participant registration/authorization, admin-only, address not baked into constructor, emits `ParticipantRegistered` (`Workflow.sol`).
-- [x] FR-02 (contract half) — `revokeParticipant` implemented and emits `ParticipantRevoked`.
-- [x] FR-03 — Generic workflow definition from ordered `Step[]` (name, role, deliverable hash); no hardcoded sequence; creator becomes admin via `WorkflowFactory`.
-- [x] FR-04 — `CustodyTransferred` records batch id, from/to, step index, deliverable/data hashes, timestamp.
-- [x] FR-05 — Signature required and recovered via `ecrecover` (`_recoverSigner`).
-- [x] FR-06 — Transfer requires signer to be both current custodian and holder of the current step's role.
-- [x] FR-07 — Step sequence enforced (`currentStep + 1 < steps.length`, cannot skip/repeat).
-- [x] FR-08 — Stale/duplicate claims rejected: batch state mutates on success, so a replayed signature no longer matches the (now different) current custodian.
-- [x] FR-09 — Compromised batches block further `transferCustody` and `reportCondition` calls.
-- [x] FR-10/FR-11 (contract half) — `reportCondition` records every reading and auto-compromises + emits `BatchCompromised` on breach (`value > threshold`).
-- [x] Foundry unit tests (`Workflow.t.sol`, `WorkflowFactory.t.sol`) + Hardhat/mocha e2e test (`test/WorkflowFactory.ts`) covering deploy → register → batch → transfer → breach, plus a rejected-signer case.
-- [ ] Deployment to a public testnet (Sepolia). Config and scripts exist (`hardhat.config.ts`, `npm run deploy:sepolia`), but no deployed address is recorded anywhere in the repo — only local `chain-31337` artifacts exist. **Required by the Definition of Done** (§8: "demonstrated locally and on a public testnet").
-- [ ] Contract verification on Etherscan after a testnet deploy (`npx hardhat verify`, scripted but never run).
+## 1. Smart contracts (`contracts/`) — unchanged
 
-## 2. Backend API (`apps/api/`)
+- [x] FR-01 through FR-09, FR-10/FR-11 (contract half) — unchanged from the previous check, still solid. See prior revisions of this file for detail; no contract code changed in this update's diff.
+- [x] Foundry + mocha test coverage — unchanged.
+- [ ] Testnet deployment and Etherscan verification — still not done.
 
-- [x] `POST /api/workflows` → deploys on-chain via factory, mirrors the result (FR-03).
-- [x] `POST /api/workflows/:workflowId/participants` → calls `registerParticipant` (FR-01).
-- [x] `POST /api/batches` → validates initial-custodian role, calls `createBatch`.
-- [x] `POST /api/batches/:batchId/transfers` → off-chain signature pre-check + role checks + calls `transferCustody` (FR-04–FR-07).
-- [x] `GET /api/batches/:batchId/history` → returns transfers recorded *during this process's lifetime*.
-- [x] `GET /api/chain/status`, `GET /api/health`.
-- [x] Request validation via shared Zod schemas (`@provenance/shared`), 400/404/409/401/502 error mapping, revert-reason decoding.
-- [x] API test suite (`apps/api/tests/app.test.ts`): 10 passing (validation-only), 6 more exercising real on-chain calls against a local Hardhat node (need `contracts/` node + deploy running to execute).
-- [ ] FR-02 (API half) — **no REST route calls `revokeParticipant`**, even though `blockchain.ts` already implements it. Participants can be registered but never revoked through the API.
-- [ ] FR-10/FR-11 (API half) — **no REST route submits a condition reading or queries breaches**, even though `blockchain.ts` already implements `reportCondition`/`getConditionBreaches` and the `ConditionReported` event listener. (Consistent with the sensor-simulator addendum already in the docs — the gap is specifically the missing route + caller, not the chain integration.)
-- [ ] FR-12 — Batch history is **not** "the complete indexed custody and condition history": it's served from the same in-memory `Map` the write routes populate, not from indexed chain events, and it never includes condition reports/breaches. There is no running indexer (see §3).
-- [ ] FR-13 — Off-chain field-level validation against a step's full deliverable specification. Only fixed DTO fields (`deliverableHash`, `locationReference`, `conditionReferences`) are validated; there's no per-step arbitrary required-fields schema or validation against it.
-- [ ] FR-14 — Application authentication (accounts, sessions, dashboard permissions). The only implementation that existed was master's independent Prisma/JWT backend, which was intentionally dropped during the `app/api` rebase as architecturally incompatible (different stack from `app/api`'s Zod/in-memory/ethers backend). **Nothing currently implements FR-14 on the kept lineage.**
-- [ ] Persistence (NFR-01/NFR-04/NFR-05, "Próximas evoluções" #1 in `docs/backend-api.md`). Store is explicitly in-memory and lost on restart (`store.ts`: `// NOTE: This is an in-memory store`). No Postgres/Supabase client exists in `apps/api` at all (`DATABASE_URL` is required by `config/env.ts` but never used).
-- [ ] Event indexer. `blockchain.ts` defines event-subscription handlers ("backbone for the indexer") but **nothing calls them anywhere** — no process listens for `CustodyTransferred`/`ParticipantRegistered`/`ConditionReported` and mirrors them into storage.
-- [x] Dead code cleanup opportunity (not a requirement, just noise found during review): `apps/api/src/index.ts` is an unused, separate minimal Express scaffold left over from initial boilerplate — `server.ts`/`app.ts` is the real entrypoint (`npm run dev`/`start` use it). Harmless but should probably be deleted.
+## 2. Backend API — blockchain-backed routes (`apps/api/src/app.ts`)
 
-## 3. Data & infrastructure
+- [x] Core workflow/batch/transfer/history routes — unchanged, still work (contract-side).
+- [x] `DELETE /api/workflows/:workflowId/participants/:address` — still present (FR-02 API gap stays closed).
+- [ ] FR-10/FR-11 (API half) — still not done. `reportCondition`/`getConditionBreaches` remain imported into `app.ts` and never called by any route. Confirmed again this pass — still dead imports.
+- [ ] FR-12, FR-13 — unchanged, still not done (in-memory-only history, no per-step field validation).
+- [~] FR-14 (Application Authentication) — now has a real, mostly-complete implementation: login, registration, forgot/reset password, **and now email-based user invites with role assignment** (see §3). Still not integrated with the blockchain routes' authorization model by design — but see the blatant deviation below about *how* it was half-wired in.
 
-- [ ] Supabase actually provisioned and connected. Docs now describe Supabase as the Postgres host (replacing the dropped `infra/` Docker plan), but no project is wired up: no `@supabase/supabase-js` or `pg`/Prisma dependency, no connection code, no schema/migrations.
-- [ ] Rebuildable Postgres mirror (NFR-05/NFR-04): depends on both the indexer and the Supabase connection above — neither exists yet.
-- [x] `infra/` folder and branch dropped per decision; docs updated accordingly.
-- [x] `zk/` stretch goal explicitly dropped for lack of time; docs updated accordingly.
-- [x] `apps/sensor-simulator/` explicitly dropped for lack of time; docs updated accordingly (contract/backend support exists per FR-10/FR-11 notes above, just not the standalone process or its REST route).
+## 3. Backend API — Postgres/Prisma routes (`apps/api/src/routes/`)
 
-## 4. Frontend (`apps/frontend/TraceBlock/`)
+Substantially larger than last time. In addition to the previously-reviewed `participantes.ts`
+(org+admin registration) and `produtos.ts` (product/lot CRUD):
 
-- [x] React/TypeScript/Tailwind app exists with pages for overview, custody, participantes, products, reports, sensors, transfers, blockchain, plus auth (login/cadastro/forgot-password) — UI shell is built (contributes visually toward FR-15/FR-16).
-- [ ] FR-15 (Workflow Administration UI) — no UI renders/edits the real shared workflow schema (ordered steps, per-step role, per-step required fields) or calls `POST /api/workflows`. Participants page uses a static mock array (`participantes.data.ts`), not the API.
-- [ ] FR-16 (Operator/Audit UI) — transfer/custody/history pages use static mock data (`transfers.data.ts`, `custody.data.ts`, etc.); none call `POST /api/batches`, `/transfers`, or `/history`. Forms are not generated from a workflow specification.
-- [ ] Auth integration is broken relative to the kept backend: `src/services/auth.ts` and `src/services/participantes.ts` call `/login`, `/me`, `/participantes/cadastro` — endpoints that only ever existed in master's dropped Prisma backend. These calls will fail against `app/api` as it stands (see FR-14 above).
-- [ ] `apps/frontend/README.md` is stale: it still says "no implementation or frontend toolchain has been selected yet," even though `TraceBlock/` is a fully scaffolded Vite/React app. Needs the same kind of update done for other stale docs.
-- [ ] NFR-08 (Accessibility/responsiveness) not assessed — no audit has been done against keyboard nav, labeling, or contrast.
+- [x] **New: `transferencias.ts`** — a real custody-transfer workflow entirely inside Postgres:
+  create a pending transfer (atomically claims the lot via a conditional `updateMany`, blocks a
+  second concurrent transfer on the same lot), the destination organization confirms (custody
+  moves) or raises an issue (custody stays), role-gated (`VIEWER` can't create/confirm/raise),
+  records temperature/humidity against the lot on creation. This is a meaningfully better
+  "claim consistency" pattern (FR-08-style) than the earlier bare product CRUD — it's good,
+  careful code. It still never touches the chain (see deviation below).
+- [x] **New: `organizacao.ts`** — admin-gated user management: list org users + pending
+  invites, send a token-hashed (SHA-256, never stored raw) 7-day email invite, accept an invite
+  to create the account. Rolls back the invite row if the invite email fails to send. Good
+  quality, consistent with the reset-password work reviewed last time.
+- [x] **New: `apps/api/tests/password.test.ts`** — a real unit test was added, including a
+  regression test for a legacy password-hash format. Welcome, and the first unit test (as
+  opposed to integration test) in `apps/api`.
+- [x] `apps/api/src/service/email.service.ts` was hardened: validates SMTP config upfront with
+  clear error messages, checks the provider actually accepted the recipient, escapes HTML in
+  the invite email (XSS-safe), chooses STARTTLS/TLS by port. Clear improvement over the previous
+  version.
+- [x] `apps/api/src/utils/password.ts`'s confusing `!salt !` expression from last check is gone,
+  replaced with a readable, correct check, plus support for a legacy `$`-delimited hash format.
 
-## 5. Testing
+## 4. Data & infrastructure
 
-- [x] Contract unit tests (Foundry-style `.t.sol`) and contract↔factory integration test (mocha/ethers).
-- [x] API integration tests (`apps/api/tests/app.test.ts`), including a subset that exercises real on-chain calls.
-- [ ] `tests/integration/` and `tests/e2e/` — both still just placeholder `README.md`s (NFR-07: "Core workflow, transfer, breach, and history paths shall have end-to-end tests"). The real tests that exist today live inside `contracts/` and `apps/api/`, not here; nothing spans contracts→API→frontend together, and nothing drives the frontend at all (no Playwright/Cypress-style suite).
-- [ ] No CI pipeline (no `.github/workflows` or equivalent) running any of the above automatically.
+- [x] `.env.example` now documents `SMTP_HOST/PORT/USER/PASS/FROM` and `FRONTEND_URL` (closes
+  part of the previously-flagged undocumented-env-var gap).
+- [ ] Still undocumented in `.env.example` / not validated through `config/env.ts`: `JWT_SECRET`,
+  `RESET_CODE_SECRET`, `DIRECT_URL` (required by `prisma7.config.ts` for `prisma generate`/
+  migrations), `CORS_ORIGIN`. Verified again this pass: a fresh clone following the documented
+  `.env.example` still cannot run `prisma generate`, start the dev server, or load the test
+  suite without discovering these by reading source first.
+- [ ] Rebuildable Postgres mirror of **chain** events — still not done; still no indexer process.
+  The Postgres schema has grown (now also `ConviteUsuario`/invites), but it's still the
+  product/lot/movement domain, not a mirror of `CustodyTransferred`/`ConditionReported`.
 
-## 6. Documentation & scope decisions
+## 5. Frontend (`apps/frontend/TraceBlock/`)
 
-- [x] `docs/requirements.md`, `docs/context.md`, `docs/architecture.md`, `docs/backend-api.md`, `README.md` updated with addenda for: sensor simulator dropped, ZK dropped, `infra/` dropped in favor of Supabase.
-- [x] Known, accepted limitations already stated per Definition of Done item 7 (oracle problem, root-of-trust, no workflow versioning, local Hardhat ≠ consensus).
-- [ ] `apps/frontend/README.md` stale (see above) — missed in the earlier doc pass since it predates the frontend existing in this branch.
-- [ ] This checklist itself should be kept current — revisit after any further implementation work.
+- [x] Organization management page and the new "accept invite" screen (`/aceitar-convite`) are
+  now wired to the real `/api/organizacao/*` endpoints — genuine integration progress, not mocks.
+- [x] Transfers page wired to `/api/transferencias/*` — also real, not mocks.
+- [ ] FR-15/FR-16 (workflow/batch-driven UI) — still not started; nothing calls `/api/workflows`
+  or `/api/batches`.
+- [ ] NFR-08 — still not assessed.
 
-## 7. Definition of Done for MVP (`docs/requirements.md` §8) — rollup
+## 6. Testing
 
-- [ ] FR-01 through FR-16 implemented and verified — **not met**: FR-02/FR-10/FR-11/FR-12 partial, FR-13/FR-14/FR-15/FR-16 not started.
-- [ ] Complete batch lifecycle demonstrated locally **and on a public testnet** — local is achievable manually (contract + API tests prove the flow); testnet deployment has not happened.
-- [x] Invalid role/signer/sequence/duplicate/compromised-batch transfers rejected — covered by contract + API tests.
-- [x] Threshold breach auto-compromises a batch and blocks movement — covered by contract tests.
-- [ ] Postgres can be cleared and rebuilt from blockchain events — blocked on indexer + Supabase wiring (§3 above).
-- [x] No credentials or private keys tracked by Git — `.env.example` files only use well-known local Hardhat test keys.
-- [x] Accepted limitations stated in project documentation.
+- [x] Contract + prior API integration tests — unchanged.
+- [x] New: `password.test.ts` unit test, passes standalone.
+- [ ] **`npm test` in `apps/api` is still broken** — the `"test"` script removed two revisions
+  ago has not been restored. `npm test` still fails with `Missing script: "test"`.
+- [ ] **New regression, found this pass:** running the suite directly (`npx vitest run`, with
+  `JWT_SECRET`/`RESET_CODE_SECRET`/`DIRECT_URL` set locally so it can even load) now shows **3
+  previously-passing tests failing** — see blatant deviation #1 below for why.
+- [ ] `tests/integration/`, `tests/e2e/`, CI — unchanged, still not done.
 
-## Suggested next priorities, in rough dependency order
+## 7. Definition of Done for MVP — rollup
 
-1. Wire a minimal indexer + Supabase connection (unblocks FR-12, NFR-01/04/05, and the "rebuildable mirror" DoD item).
-2. Add the two missing REST routes (`revoke participant`, `report condition` / breach query) — the hard part (contract + `blockchain.ts`) is already done.
-3. Decide and implement FR-14 (application auth) from scratch against `app/api`'s own stack, since the previous implementation was dropped.
-4. Wire the frontend's workflow/batch/transfer pages to the real API and drop the mock `*.data.ts` fixtures; fix or rebuild the auth screens against whatever FR-14 implementation lands.
-5. Add field-level validation against per-step deliverable specs (FR-13), which also unblocks a real FR-15 admin UI.
-6. Sepolia deployment + verification, then point the API/frontend at it for the milestone demo.
-7. Fill in `tests/integration/` and `tests/e2e/`, and add a CI workflow.
+Unchanged from the previous check except FR-02 (closed earlier) and a larger slice of FR-14
+(closed this round). Still not met overall: FR-10/11/12/13/15/16 open, no testnet deployment,
+no chain-event mirror.
+
+---
+
+## What should be consolidated (duplicated or drifting, not broken)
+
+1. **`loadCurrentUser`/`loadAuthenticatedUser` is now implemented three times**, and the copies
+   have already drifted:
+   - `apps/api/src/utils/session.ts` exports `loadCurrentUser` — checks `user.ativo` (the
+     individual account's active flag) **and** `user.participante?.ativo` (the org's).
+   - `apps/api/src/routes/organizacao.ts` defines its own local `loadCurrentUser` — checks
+     **only** `user.participante?.ativo`, not `user.ativo`. A user whose individual account has
+     been deactivated (e.g. via `organizacao.ts`'s own user-management screen, which sets
+     `status: "ACTIVE"/"INACTIVE"` off `user.ativo`) can still authenticate against
+     `organizacao.ts`'s own routes, but would be rejected by `transferencias.ts` (which uses
+     `session.ts`'s stricter version). That's a real, security-relevant inconsistency between
+     two copies of "the same" check, not just stylistic duplication.
+   - `apps/api/src/routes/produtos.ts` has a third, differently-named copy
+     (`loadAuthenticatedUser`), matching `session.ts`'s stricter behavior but still not reusing
+     it.
+   - `roleFromProfile` is also duplicated (`session.ts` and `organizacao.ts` each define their
+     own, currently identical, copy).
+   - Recommendation: have `produtos.ts`/`organizacao.ts` import `loadCurrentUser`/
+     `roleFromProfile` from `session.ts` and delete their local copies; decide deliberately
+     whether the individual-account-active check belongs in the shared version (it should).
+2. **Two patterns for request validation now coexist long-term**: `@provenance/shared` Zod
+   schemas (used by the blockchain routes) vs. locally-defined Zod schemas per route file (used
+   by every Postgres route: `participantes.ts`, `produtos.ts`, `transferencias.ts`,
+   `organizacao.ts`, `auth.ts`). Not wrong by itself, but the frontend independently re-declares
+   matching types in `services/*.ts` for each of these, with nothing keeping the two sides in
+   sync. Worth a deliberate decision either to move these into `@provenance/shared` too, or to
+   explicitly document that Postgres-only routes are exempt from that convention.
+3. **`docs/backend-api.md`'s endpoint table is now incomplete**: it lists the blockchain routes
+   and `/api/participantes/cadastro`, but not `/api/produtos/*`, `/api/organizacao/*`, or
+   `/api/transferencias/*`, despite those being the bulk of the recently added, functioning
+   surface. Low-risk, but will mislead anyone using that doc as a reference.
+4. **`GET /api/auth/me` is still defined twice** (`auth.ts` and `user.ts`, both mounted at
+   `/api/auth`) — flagged last check, unchanged. `user.ts`'s version (which reuses the
+   `autenticar` middleware) is still shadowed/unreachable.
+5. **Stray `apps/package.json`/`apps/package-lock.json`** — flagged last check, still present,
+   still looks like an accidental `npm install` from the wrong directory.
+
+## What's blatantly deviated (verified bugs or architecture-contradicting decisions)
+
+1. **A typo silently defeats the one attempt made to add authorization to the blockchain
+   routes, and also breaks an existing test suite.** `apps/api/src/app.ts:84`:
+   ```ts
+   app.use(["/api/worflows", "/api/batches"], autenticar);
+   ```
+   `"/api/worflows"` is misspelled (missing the `k`), so it **never matches** the real
+   `/api/workflows*` routes — every workflow-admin action (create workflow, register/revoke
+   participant) remains completely unauthenticated, silently, with no indication anywhere that
+   protection was intended but failed to apply. Meanwhole `/api/batches` **is** spelled
+   correctly and now requires a Bearer token for every one of its routes — including
+   `GET /api/batches/:batchId/history`, a read-only lookup that `docs/context.md`'s own actor
+   model describes as used by an "Auditor/consumer" who isn't necessarily a registered
+   organization user. Verified by actually running the suite: **3 previously-passing tests in
+   `apps/api/tests/app.test.ts` now fail**, all with the same symptom — the middleware returns
+   401 before the route handler (and its 404/409 business-logic responses) ever runs. This is
+   the single most concrete, confirmed regression in this revision.
+2. **The custody-transfer domain fork described in the previous checklist is now deeper, not
+   shallower.** `transferencias.ts` adds a second, more complete pending→confirm/issue custody
+   workflow, entirely in Postgres, with no call into `blockchain.ts` at any point (no
+   `transferCustody`, no signature requirement, no role check against the on-chain
+   `authorizedParticipants` mapping — only against the Postgres `usuario.perfil`/`roleFromProfile`).
+   `movimentacao.tx_hash` is written nowhere in this flow (still only ever read, surfaced to the
+   frontend as `"Pendente"` forever), and `status_blockchain` still defaults to `"PENDENTE"` and
+   is never updated either. This is the same architectural inversion flagged last time
+   (chain-first/mirror-second, per `docs/context.md` §3.3 and NFR-01) — except now it's a fuller,
+   more convincing feature, which raises the cost of reconciling it later the longer it's built
+   on without a decision. This is still the single highest-leverage open question for the
+   project: is the Postgres `lote`/`movimentacao` domain meant to *become* the on-chain-backed
+   batch/transfer flow (in which case it needs real `transferCustody` calls, signatures, and
+   `tx_hash` writes wired in), or is it intentionally a separate internal system (in which case
+   FR-04/FR-08/FR-10/FR-12, which all assume on-chain custody transfers, need to be re-scoped in
+   the requirements doc to match)?
+3. **Test suite regression from the previous checklist is still unresolved**, and is now worse:
+   `apps/api/package.json`'s `"test"` script is still missing (`npm test` still fails outright
+   with `Missing script: "test"`), and even bypassing that, the suite now has 3 genuine
+   failures on top of the previous "fails to load without `JWT_SECRET`" issue (both issues
+   verified again this pass, by actually installing, generating the Prisma client, and running
+   `npx vitest run`).
