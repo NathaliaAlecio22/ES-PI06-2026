@@ -61,6 +61,10 @@ model movimentacao {
   lote                                               lote            @relation(fields: [lote_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   participante_movimentacao_origem_idToparticipante  participante?   @relation("movimentacao_origem_idToparticipante", fields: [origem_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   usuario                                            usuario         @relation(fields: [usuario_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  etapa_cadeia_id                                    BigInt?
+  etapa_cadeia                                       etapa_cadeia_custodia? @relation(fields: [etapa_cadeia_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([etapa_cadeia_id])
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -79,6 +83,8 @@ model participante {
   usuario                                            usuario[]
   produtos_fabricados                                produto[]       @relation("produto_fabricante")
   convites                                           ConviteUsuario[]
+  cadeias_custodia                                   cadeia_custodia[] @relation("cadeia_organizacao")
+  etapas_custodia                                    etapa_cadeia_custodia[] @relation("etapa_responsavel")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -119,6 +125,44 @@ model usuario {
   participante    participante?  @relation(fields: [participante_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   lotes_cadastrados lote[]         @relation("lote_responsavel_cadastro")
   convites_enviados ConviteUsuario[] @relation("convite_remetente")
+}
+
+
+/// Configuração persistente da cadeia definida pelo administrador da organização.
+model cadeia_custodia {
+  id                 BigInt                  @id @default(autoincrement())
+  organizacao_id     BigInt                  @unique
+  nome               String                  @db.VarChar(150)
+  endereco_admin     String                  @db.VarChar(42)
+  endereco_contrato  String                  @unique @db.VarChar(42)
+  tx_hash_criacao    String?                 @unique @db.VarChar(66)
+  bloco_criacao      Int?
+  data_criacao       DateTime                @default(now()) @db.Timestamptz(6)
+  organizacao        participante            @relation("cadeia_organizacao", fields: [organizacao_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  etapas             etapa_cadeia_custodia[]
+
+  @@map("cadeias_custodia")
+}
+
+/// Etapa ordenada da cadeia, com participante/organização responsável.
+/// O endereço da carteira é mantido como snapshot para refletir exatamente o contrato on-chain.
+model etapa_cadeia_custodia {
+  id                  BigInt           @id @default(autoincrement())
+  cadeia_id           BigInt
+  ordem               Int
+  nome                String           @db.VarChar(150)
+  papel               String           @db.VarChar(40)
+  responsavel_id      BigInt?
+  endereco_carteira   String           @db.VarChar(42)
+  especificacao       String?
+  hash_especificacao  String           @db.VarChar(66)
+  cadeia              cadeia_custodia  @relation(fields: [cadeia_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  responsavel         participante?   @relation("etapa_responsavel", fields: [responsavel_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  movimentacoes       movimentacao[]
+
+  @@unique([cadeia_id, ordem])
+  @@index([responsavel_id])
+  @@map("etapas_cadeia_custodia")
 }
 
 model ConviteUsuario {

@@ -25,6 +25,11 @@ export type OrganizationUserInput = {
   role: OrganizationUserRole;
 };
 
+export type OrganizationWallet = {
+  name: string;
+  address: string | null;
+};
+
 const apiUrl = (import.meta.env.VITE_API_URL ?? "http://localhost:3000/api")
   .replace(/\/$/, "");
 
@@ -59,6 +64,17 @@ async function organizationRequest<T>(
 
 export function listarUsuariosOrganizacao(): Promise<OrganizationUsersResult> {
   return organizationRequest<OrganizationUsersResult>("/usuarios");
+}
+
+export function buscarCarteiraOrganizacao(): Promise<OrganizationWallet> {
+  return organizationRequest<OrganizationWallet>("/carteira");
+}
+
+export function salvarCarteiraOrganizacao(address: string): Promise<OrganizationWallet> {
+  return organizationRequest<OrganizationWallet>("/carteira", {
+    method: "PATCH",
+    body: JSON.stringify({ address }),
+  });
 }
 
 export async function convidarUsuario(

@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock3, Route } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, Route } from "lucide-react";
 import type { CustodyStep } from "./custody,types";
 
 interface Props {
@@ -6,17 +6,17 @@ interface Props {
 }
 
 export default function CustodyProgress({ steps }: Props) {
-  const completed = steps.filter(
-    (step) => step.state === "done"
-  ).length;
+  // Uma ocorrência altera o estado da etapa, mas não a remove da cadeia configurada.
+  const chain = steps;
+  const issues = steps.filter((step) => step.state === "issue").length;
 
-  const percentage = steps.length
-    ? Math.round((completed / steps.length) * 100)
+  const completed = chain.filter((step) => step.state === "done").length;
+  const current = chain.find((step) => step.state === "current");
+  const reached = completed + (current ? 1 : 0);
+
+  const percentage = chain.length
+    ? Math.round((reached / chain.length) * 100)
     : 0;
-
-  const current = steps.find(
-    (step) => step.state === "current"
-  );
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -34,11 +34,11 @@ export default function CustodyProgress({ steps }: Props) {
 
         <div className="sm:text-right">
           <p className="text-xl font-bold tracking-tight text-slate-900">
-            {completed} de {steps.length} etapas
+            {reached} de {chain.length} etapas
           </p>
 
           <p className="text-xs text-slate-500">
-            {percentage}% concluído
+            {percentage}% da cadeia percorrida
           </p>
         </div>
       </div>
@@ -56,11 +56,16 @@ export default function CustodyProgress({ steps }: Props) {
           {completed} etapas concluídas
         </span>
 
+        {issues > 0 && (
+          <span className="inline-flex items-center gap-1.5 text-red-600">
+            <AlertTriangle size={14} />
+            {issues} {issues === 1 ? "ocorrência" : "ocorrências"}
+          </span>
+        )}
+
         <span className="inline-flex items-center gap-1.5">
           <Clock3 size={14} className="text-blue-600" />
-          {current
-            ? `Etapa atual: ${current.type}`
-            : "Cadeia finalizada"}
+          {current ? `Custódia atual: ${current.org}` : "Sem custódia registrada"}
         </span>
       </div>
     </section>

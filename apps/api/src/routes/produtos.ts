@@ -5,6 +5,14 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { autenticar } from "../middlewares/auth.middleware";
 import type { JwtPayload } from "../utils/jwt";
+import {
+  createBatch,
+  deriveLotBatchId,
+  getWorkflowForOrganization,
+  getWorkflowSteps,
+  isWorkflowFactoryVersionError,
+} from "../blockchain";
+import { env } from "../config/env";
 
 const createProductSchema = z
   .object({
@@ -212,6 +220,26 @@ router.post("/", autenticar, async (request, response) => {
     if (!usuario?.participante_id) return;
 
     const input: CreatedProductInput = parsed.data;
+    let workflowAddress: string | null = null;
+    if (env.WORKFLOW_FACTORY_ADDRESS) {
+      try {
+        workflowAddress = await getWorkflowForOrganization(usuario.participante_id);
+      } catch (error) {
+        if (!isWorkflowFactoryVersionError(error)) throw error;
+        console.warn(error.message);
+      }
+    }
+    const ownerWallet = usuario.participante?.wallet_address;
+    if (workflowAddress) {
+      const workflowSteps = await getWorkflowSteps(workflowAddress);
+      if (!ownerWallet || workflowSteps[0]?.assignee.toLowerCase() !== ownerWallet.toLowerCase()) {
+        response.status(409).json({
+          message: "A carteira da sua organização não está atribuída à primeira etapa da cadeia.",
+        });
+        return;
+      }
+    }
+
     const product = await prisma.$transaction(async (transaction) => {
       const createdProduct = await transaction.produto.create({
         data: {
@@ -243,7 +271,15 @@ router.post("/", autenticar, async (request, response) => {
       return { createdProduct, lot };
     });
 
+    let batchId: string | undefined;
+    if (workflowAddress) {
+      batchId = (await deriveLotBatchId(product.lot.codigo)).toString();
+      if (!ownerWallet) throw new Error("Organization wallet disappeared while creating its chain batch");
+      await createBatch(workflowAddress, BigInt(batchId), ownerWallet);
+    }
+
     response.status(201).json({
+      ...(batchId ? { batchId } : {}),
       product: {
         code: product.createdProduct.codigo,
         name: product.createdProduct.nome,

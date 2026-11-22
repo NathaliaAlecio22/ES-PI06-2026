@@ -4,6 +4,8 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 
 import { prisma } from "../lib/prisma";
+import { getWorkflowForOrganization, getWorkflowSteps } from "../blockchain";
+import { env } from "../config/env";
 import { autenticar } from "../middlewares/auth.middleware";
 import { enviarConviteUsuario } from "../service/email.service";
 import { hashPassword } from "../utils/password.js";
@@ -31,12 +33,74 @@ const updateUserSchema = z.object({
   role: z.enum(userRoles),
 });
 
+const walletSchema = z.object({
+  address: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Informe um endereço de carteira válido."),
+});
+
 const acceptInviteSchema = z.object({
   token: z.string().min(32).max(256),
   password: z.string().min(8).max(128),
 });
 
 const router = Router();
+
+router.get("/carteira", autenticar, async (request, response) => {
+  try {
+    const user = await loadCurrentUser(request.usuario, response);
+    if (!user?.participante_id || !user.participante) return;
+    response.json({
+      name: user.participante.nome,
+      address: user.participante.wallet_address,
+    });
+  } catch (error) {
+    console.error("Erro ao carregar a carteira da organização:", error);
+    response.status(500).json({ message: "Não foi possível carregar a carteira da organização." });
+  }
+});
+
+router.patch("/carteira", autenticar, async (request, response) => {
+  const parsed = walletSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({ message: parsed.error.issues[0]?.message ?? "Carteira inválida." });
+    return;
+  }
+  try {
+    const user = await loadAdministrator(request.usuario, response);
+    if (!user?.participante_id) return;
+    const currentWallet = user.participante?.wallet_address;
+    if (env.WORKFLOW_FACTORY_ADDRESS && currentWallet) {
+      const workflowAddress = await getWorkflowForOrganization(user.participante_id);
+      if (workflowAddress) {
+        const steps = await getWorkflowSteps(workflowAddress);
+        const currentWalletAssigned = steps.some(
+          (step) => step.assignee.toLowerCase() === currentWallet.toLowerCase(),
+        );
+        if (
+          currentWalletAssigned &&
+          parsed.data.address.toLowerCase() !== currentWallet.toLowerCase()
+        ) {
+          response.status(409).json({
+            message: "A carteira está atribuída a uma cadeia ativa e não pode ser substituída.",
+          });
+          return;
+        }
+      }
+    }
+    const participant = await prisma.participante.update({
+      where: { id: user.participante_id },
+      data: { wallet_address: parsed.data.address },
+      select: { nome: true, wallet_address: true },
+    });
+    response.json({ name: participant.nome, address: participant.wallet_address });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      response.status(409).json({ message: "Esta carteira já está vinculada a outro participante." });
+      return;
+    }
+    console.error("Erro ao atualizar carteira da organização:", error);
+    response.status(500).json({ message: "Não foi possível atualizar a carteira da organização." });
+  }
+});
 
 function hashInviteToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");

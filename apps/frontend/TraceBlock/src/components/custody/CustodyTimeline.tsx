@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Check,
   ClipboardCheck,
   Clock3,
@@ -19,6 +20,7 @@ interface Props {
 function stateLabel(state: CustodyStep["state"]) {
   if (state === "done") return "Concluída";
   if (state === "current") return "Etapa atual";
+  if (state === "issue") return "Com ocorrência";
   return "Pendente";
 }
 
@@ -29,7 +31,14 @@ function stateClasses(state: CustodyStep["state"]) {
   if (state === "current")
     return "bg-blue-50 text-blue-700 ring-blue-200";
 
+  if (state === "issue")
+    return "bg-red-50 text-red-700 ring-red-200";
+
   return "bg-slate-100 text-slate-500 ring-slate-200";
+}
+
+function shortHash(hash: string) {
+  return hash.length > 20 ? `${hash.slice(0, 10)}…${hash.slice(-8)}` : hash;
 }
 
 export default function CustodyTimeline({ steps }: Props) {
@@ -74,13 +83,17 @@ export default function CustodyTimeline({ steps }: Props) {
                       ? "bg-emerald-100 text-emerald-700"
                       : step.state === "current"
                         ? "bg-blue-100 text-blue-700"
-                        : "bg-slate-100 text-slate-400"
+                        : step.state === "issue"
+                          ? "bg-red-100 text-red-600"
+                          : "bg-slate-100 text-slate-400"
                   }`}
                 >
                   {step.state === "done" ? (
                     <Check size={17} />
                   ) : step.state === "current" ? (
                     <Truck size={17} />
+                  ) : step.state === "issue" ? (
+                    <AlertTriangle size={17} />
                   ) : (
                     <Clock3 size={17} />
                   )}
@@ -95,7 +108,9 @@ export default function CustodyTimeline({ steps }: Props) {
                 className={`mb-5 min-w-0 flex-1 rounded-xl border p-4 transition ${
                   step.state === "current"
                     ? "border-blue-200 bg-blue-50/40"
-                    : "border-slate-200 bg-white"
+                    : step.state === "issue"
+                      ? "border-red-200 bg-red-50/40"
+                      : "border-slate-200 bg-white"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -109,11 +124,11 @@ export default function CustodyTimeline({ steps }: Props) {
                     </span>
 
                     <h3 className="mt-2 text-sm font-semibold text-slate-900">
-                      {step.org}
+                      {step.stageName ?? step.org}
                     </h3>
 
                     <p className="mt-0.5 text-xs text-slate-500">
-                      {step.role}
+                      {step.stageName ? `${step.org} · ${step.role}` : step.role}
                     </p>
                   </div>
 
@@ -159,19 +174,28 @@ export default function CustodyTimeline({ steps }: Props) {
                     Hash da transação
                   </span>
 
-                  <code className="rounded bg-slate-100 px-2 py-1 font-mono text-slate-700">
-                    {step.hash}
-                  </code>
+                  {step.hash ? (
+                    <>
+                      <code
+                        title={step.hash}
+                        className="rounded bg-slate-100 px-2 py-1 font-mono text-slate-700"
+                      >
+                        {shortHash(step.hash)}
+                      </code>
 
-                  {step.hash !== "Pendente" && (
-                    <button
-                      type="button"
-                      onClick={() => void copyHash(step.hash)}
-                      title="Copiar hash"
-                      className="rounded p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-700"
-                    >
-                      <Copy size={14} />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => void copyHash(step.hash ?? "")}
+                        title="Copiar hash"
+                        className="rounded p-1.5 text-slate-400 transition hover:bg-blue-50 hover:text-blue-700"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-slate-400">
+                      Ainda não registrado na blockchain
+                    </span>
                   )}
                 </div>
               </article>

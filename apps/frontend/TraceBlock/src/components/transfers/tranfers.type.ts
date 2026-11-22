@@ -52,6 +52,9 @@ export interface TransferLotOption {
   unit: string;
   currentOwner: string;
   location: string;
+  nextDestinationId?: string | null;
+  workflowManaged?: boolean;
+  workflowComplete?: boolean;
 }
 
 export interface TransferParticipantOption {

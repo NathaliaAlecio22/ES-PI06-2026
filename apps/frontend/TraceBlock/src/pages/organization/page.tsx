@@ -6,6 +6,7 @@ import {
   Plus,
   Search,
   Users,
+  Wallet,
 } from "lucide-react";
 
 import OrganizationUsers from "../../components/organization/OrganizationUsers";
@@ -17,9 +18,12 @@ import {
   cancelarConviteUsuario,
   convidarUsuario,
   listarUsuariosOrganizacao,
+  buscarCarteiraOrganizacao,
+  salvarCarteiraOrganizacao,
   type OrganizationUserInput,
   type OrganizationUserStats,
 } from "../../services/organization";
+import { connectWallet } from "../../services/wallet";
 
 const emptyStats: OrganizationUserStats = {
   total: 0,
@@ -37,6 +41,9 @@ export default function OrganizationManagement() {
   const [selectedUser, setSelectedUser] = useState<OrganizationUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [walletSaved, setWalletSaved] = useState("");
+  const [walletBusy, setWalletBusy] = useState(false);
 
   async function loadUsers() {
     const result = await listarUsuariosOrganizacao();
@@ -47,12 +54,14 @@ export default function OrganizationManagement() {
 
   useEffect(() => {
     let active = true;
-    listarUsuariosOrganizacao()
-      .then((result) => {
+    Promise.all([listarUsuariosOrganizacao(), buscarCarteiraOrganizacao()])
+      .then(([result, wallet]) => {
         if (!active) return;
         setUsers(result.users);
         setStats(result.stats);
         setCanManageUsers(result.permissions.canManageUsers);
+        setWalletAddress(wallet.address ?? "");
+        setWalletSaved(wallet.address ?? "");
       })
       .catch((loadError: unknown) => {
         if (active) {
@@ -71,6 +80,30 @@ export default function OrganizationManagement() {
       active = false;
     };
   }, []);
+
+  const handleConnectWallet = async () => {
+    setError("");
+    try {
+      const address = await connectWallet();
+      setWalletAddress(address);
+    } catch (walletError) {
+      setError(walletError instanceof Error ? walletError.message : "Não foi possível conectar a carteira.");
+    }
+  };
+
+  const handleSaveWallet = async () => {
+    setError("");
+    setWalletBusy(true);
+    try {
+      const result = await salvarCarteiraOrganizacao(walletAddress.trim());
+      setWalletAddress(result.address ?? "");
+      setWalletSaved(result.address ?? "");
+    } catch (walletError) {
+      setError(walletError instanceof Error ? walletError.message : "Não foi possível salvar a carteira.");
+    } finally {
+      setWalletBusy(false);
+    }
+  };
 
   const filteredUsers = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -158,6 +191,46 @@ export default function OrganizationManagement() {
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
         </p>
+      )}
+
+      {canManageUsers && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700">
+              <Wallet size={19} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-bold text-slate-800">Carteira da organização</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                A carteira identifica sua organização na cadeia e autoriza as transferências da etapa atribuída.
+              </p>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <input
+                  aria-label="Endereço da carteira da organização"
+                  value={walletAddress}
+                  onChange={(event) => setWalletAddress(event.target.value)}
+                  placeholder="0x..."
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 px-3 font-mono text-xs outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleConnectWallet()}
+                  className="h-10 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Conectar carteira
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveWallet()}
+                  disabled={walletBusy || !walletAddress.trim() || walletAddress === walletSaved}
+                  className="h-10 rounded-lg bg-blue-600 px-4 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {walletBusy ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

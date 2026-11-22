@@ -1,6 +1,6 @@
-// NOTE: This is an in-memory store (data is lost on restart).
-// TODO: Persist workflows and batches to the project database once
-// backend persistence is implemented.
+// The database now persists workflow definitions and ordered custody stages.
+// This cache remains only for the standalone /api/batches demonstration endpoints;
+// production lot transfers derive their state from PostgreSQL + the blockchain.
 import { randomUUID } from "node:crypto";
 import { ethers } from "ethers";
 
@@ -14,7 +14,9 @@ export type StoredWorkflow = Workflow & {
   workflowAddress: string;
 };
 
+/** Optional process cache; PostgreSQL is the durable source used by the application routes. */
 export const workflows = new Map<bigint, StoredWorkflow>();
+/** Ephemeral state for standalone demonstration batch endpoints (not production lot transfers). */
 export const batches = new Map<bigint, Batch>();
 
 /**

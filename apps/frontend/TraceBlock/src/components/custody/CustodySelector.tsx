@@ -1,17 +1,19 @@
 import { ChevronDown, PackageOpen, Search } from "lucide-react";
-import { custodyLots } from "./custody.data";
+
+import type { CustodyLot } from "./custody,types";
 
 interface Props {
+  lots: CustodyLot[];
   lot: string;
   onLotChange: (value: string) => void;
 }
 
 export default function CustodyLotSelector({
+  lots,
   lot,
   onLotChange,
 }: Props) {
-  const selected =
-    custodyLots.find((item) => item.value === lot) ?? custodyLots[0];
+  const selected = lots.find((item) => item.value === lot) ?? lots[0];
 
   return (
     <section className="flex flex-col gap-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
@@ -35,7 +37,7 @@ export default function CustodyLotSelector({
             onChange={(event) => onLotChange(event.target.value)}
             className="h-11 w-full appearance-none rounded-lg border border-slate-200 bg-white pl-10 pr-10 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
           >
-            {custodyLots.map((item) => (
+            {lots.map((item) => (
               <option key={item.value} value={item.value}>
                 {item.label}
               </option>
@@ -49,25 +51,35 @@ export default function CustodyLotSelector({
         </div>
       </div>
 
-      <div className="flex min-w-0 items-center gap-3 rounded-lg bg-slate-50 p-3 lg:min-w-[330px]">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-blue-100 text-blue-700">
-          <PackageOpen size={21} />
-        </span>
+      {selected && (
+        <div className="flex min-w-0 items-center gap-3 rounded-lg bg-slate-50 p-3 lg:min-w-[330px]">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-blue-100 text-blue-700">
+            <PackageOpen size={21} />
+          </span>
 
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-800">
-            {selected.product}
-          </p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-slate-800">
+              {selected.product}
+            </p>
 
-          <p className="mt-1 text-xs text-slate-500">
-            {selected.harvest} · {selected.quantity}
-          </p>
+            <p className="mt-1 text-xs text-slate-500">
+              {[selected.detail, selected.quantity]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+
+            {selected.currentOwner && (
+              <p className="mt-1 truncate text-xs text-slate-400">
+                Com: {selected.currentOwner}
+              </p>
+            )}
+          </div>
+
+          <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+            {selected.status}
+          </span>
         </div>
-
-        <span className="shrink-0 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
-          {selected.status}
-        </span>
-      </div>
+      )}
     </section>
   );
 }

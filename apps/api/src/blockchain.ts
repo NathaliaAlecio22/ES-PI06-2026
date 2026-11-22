@@ -69,6 +69,7 @@ export type ChainEventMeta = {
 };
 
 export type WorkflowCreatedEvent = ChainEventMeta & {
+  organizationId: bigint;
   workflowAddress: string;
   admin: string;
 };
@@ -132,6 +133,11 @@ export function assertBytes32(value: string, field = "hash"): string {
     throw new Error(`Invalid ${field}: "${value}" must be a 0x-prefixed 32-byte hex string`);
   }
   return value;
+}
+
+export function hashSpecification(specification: string): string {
+  if (!specification.trim()) throw new Error("Specification cannot be empty");
+  return ethers.keccak256(ethers.toUtf8Bytes(specification.trim()));
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +209,17 @@ export function getFactoryContract(withSigner = false): ethers.Contract {
 export function getWorkflowContract(workflowAddress: string, withSigner = false): ethers.Contract {
   const runner = withSigner ? getSigner() : getProvider();
   return new ethers.Contract(assertAddress(workflowAddress, "workflowAddress"), WORKFLOW_ABI, runner);
+}
+
+export class WorkflowFactoryVersionError extends Error {
+  constructor() {
+    super("WORKFLOW_FACTORY_ADDRESS points to a factory deployed before organization workflows were added. Redeploy WorkflowFactory and update the configured address.");
+    this.name = "WorkflowFactoryVersionError";
+  }
+}
+
+export function isWorkflowFactoryVersionError(error: unknown): error is WorkflowFactoryVersionError {
+  return error instanceof WorkflowFactoryVersionError;
 }
 
 // ---------------------------------------------------------------------------
@@ -280,19 +297,33 @@ function findEventLog(
  * becomes that instance's admin automatically.
  */
 export async function createWorkflow(
+  organizationId: bigint,
+  name: string,
   steps: WorkflowStep[],
 ): Promise<{ workflowAddress: string; admin: string; txHash: string; blockNumber: number }> {
+  if (organizationId <= 0n) {
+    throw new Error("organizationId must be positive");
+  }
+  if (!name.trim()) {
+    throw new Error("Workflow name is required");
+  }
   if (steps.length === 0) {
     throw new Error("A workflow must define at least one step");
   }
-  for (const step of steps) assertBytes32(step.specificationHash, "step.specificationHash");
+  for (const step of steps) {
+    assertBytes32(step.specificationHash, "step.specificationHash");
+    assertAddress(step.assignee, "step.assignee");
+  }
 
   const factory = getFactoryContract(true);
   const receipt = await sendAndWait("createWorkflow", () =>
     factory.createWorkflow(
+      organizationId,
+      name.trim(),
       steps.map((step) => ({
         name: step.name,
         requiredRole: roleToChainId(step.requiredRole),
+        assignee: step.assignee,
         deliverableHash: step.specificationHash,
       })),
     ),
@@ -309,6 +340,27 @@ export async function createWorkflow(
     txHash: receipt.hash,
     blockNumber: receipt.blockNumber,
   };
+}
+
+export async function getWorkflowForOrganization(organizationId: bigint): Promise<string | null> {
+  if (organizationId <= 0n) throw new Error("organizationId must be positive");
+  const factory = getFactoryContract();
+  let address: string;
+  try {
+    address = (await factory.workflowForOrganization(organizationId)) as string;
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    const message = error instanceof Error ? error.message : String(error);
+    if (code === "BAD_DATA" && /could not decode result data/i.test(message)) {
+      throw new WorkflowFactoryVersionError();
+    }
+    throw error;
+  }
+  return address === ethers.ZeroAddress ? null : address;
+}
+
+export async function deriveLotBatchId(lotCode: string): Promise<bigint> {
+  return BigInt(ethers.keccak256(ethers.toUtf8Bytes(`traceblock-lot:${lotCode}`)));
 }
 
 // ---------------------------------------------------------------------------
@@ -420,9 +472,24 @@ export async function getWorkflowAdmin(workflowAddress: string): Promise<string>
   return (await contract.admin()) as string;
 }
 
+export async function getWorkflowOrganizationId(workflowAddress: string): Promise<bigint> {
+  const contract = getWorkflowContract(workflowAddress);
+  return (await contract.organizationId()) as bigint;
+}
+
+export async function getWorkflowName(workflowAddress: string): Promise<string> {
+  const contract = getWorkflowContract(workflowAddress);
+  return (await contract.name()) as string;
+}
+
+export async function getWorkflowCreatedAt(workflowAddress: string): Promise<number> {
+  const contract = getWorkflowContract(workflowAddress);
+  return Number((await contract.createdAt()) as bigint);
+}
+
 export async function getWorkflowSteps(workflowAddress: string): Promise<WorkflowStep[]> {
   const contract = getWorkflowContract(workflowAddress);
-  const steps = (await contract.getSteps()) as Array<{ name: string; requiredRole: bigint; deliverableHash: string }>;
+  const steps = (await contract.getSteps()) as Array<{ name: string; requiredRole: bigint; assignee: string; deliverableHash: string }>;
   return steps.map((step) => {
     const role = roleFromChainId(Number(step.requiredRole));
     if (role === "none") {
@@ -431,6 +498,7 @@ export async function getWorkflowSteps(workflowAddress: string): Promise<Workflo
     return {
       name: step.name,
       requiredRole: role,
+      assignee: step.assignee,
       specificationHash: step.deliverableHash,
     };
   });
@@ -688,8 +756,8 @@ export function subscribeToWorkflowEvents(workflowAddress: string, handlers: Wor
 /** Lets the API auto-discover new `Workflow` deployments as enterprises onboard. */
 export function subscribeToFactoryEvents(onWorkflowCreated: (event: WorkflowCreatedEvent) => void): () => void {
   const factory = getFactoryContract();
-  const listener = (workflowAddress: string, admin: string, _timestamp: bigint, payload: ethers.ContractEventPayload) => {
-    onWorkflowCreated({ workflowAddress, admin, ...meta(payload) });
+  const listener = (organizationId: bigint, workflowAddress: string, admin: string, _timestamp: bigint, payload: ethers.ContractEventPayload) => {
+    onWorkflowCreated({ organizationId, workflowAddress, admin, ...meta(payload) });
   };
   factory.on("WorkflowCreated", listener);
   return () => factory.off("WorkflowCreated", listener);

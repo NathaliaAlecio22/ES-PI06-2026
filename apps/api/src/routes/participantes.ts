@@ -160,6 +160,44 @@ participantesRouter.get("/destinos", autenticar, async (request, response) => {
       orderBy: { nome: "asc" },
     });
 
+    participantesRouter.get("/cadeia-opcoes", autenticar, async (request, response) => {
+      try {
+        const user = await loadCurrentUser(request.usuario, response);
+        if (!user?.participante_id) return;
+
+        const participants = await prisma.participante.findMany({
+          where: { ativo: true, wallet_address: { not: null } },
+          select: { id: true, nome: true, tipo: true, wallet_address: true },
+          orderBy: { nome: "asc" },
+        });
+
+        response.json({
+          organizationId: user.participante_id.toString(),
+          participants: participants.map((participant) => ({
+            id: participant.id.toString(),
+            name: participant.nome,
+            type: participant.tipo ?? "",
+            address: participant.wallet_address,
+            role: roleForParticipantType(participant.tipo),
+          })).filter((participant) => participant.role !== null),
+        });
+      } catch (error) {
+        console.error("Erro ao listar participantes para a cadeia:", error);
+        response.status(500).json({ message: "Não foi possível carregar os participantes da cadeia." });
+      }
+    });
+
+    function roleForParticipantType(type: string | null): string | null {
+      const roles: Record<string, string> = {
+        Fabricante: "manufacturer",
+        Distribuidor: "distributor",
+        Transportadora: "carrier",
+        "Centro de armazenamento": "distribution_center",
+        Varejista: "retailer",
+      };
+      return type ? roles[type] ?? null : null;
+    }
+
     response.json({
       participants: participants.map((p) => ({
         id: p.id.toString(),

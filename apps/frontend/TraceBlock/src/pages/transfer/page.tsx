@@ -170,7 +170,9 @@ function TransferDetails({
               {transfer.status === "Aguardando confirmação"
                 ? "O lote permanece sob custódia da origem até o destino confirmar o recebimento."
                 : transfer.status === "Confirmada"
-                  ? "O recebimento foi confirmado e a custódia passou para o destino."
+                  ? transfer.hash !== "Pendente"
+                    ? "A transação foi confirmada na blockchain e a custódia passou para o destino da próxima etapa."
+                    : "O recebimento foi confirmado pelo destino e a custódia passou para essa organização."
                   : "Foi registrada uma ocorrência e o lote permanece com a origem."}
             </p>
           </div>

@@ -3,12 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "shared:build": "npm --prefix ../../packages/shared run build",
+    "predev": "npm run shared:build",
     "dev": "tsx watch src/server.ts",
+    "prebuild": "npm run shared:build",
     "build": "tsc",
     "start": "node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "pretest:custodia": "npm run shared:build",
+    "test:custodia": "tsc -p tsconfig.json --outDir dist-test && node --test dist-test/tests/custodia.fluxo.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
