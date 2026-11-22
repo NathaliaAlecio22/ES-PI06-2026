@@ -1,9 +1,6 @@
-
 import {
   ChevronDown,
-  CircleHelp,
   LogOut,
-  Settings,
   X,
 } from "lucide-react";
 
@@ -135,38 +132,6 @@ export default function Sidebar({
 
         {/* Rodapé da sidebar */}
         <div className="mt-auto border-t border-[#242d3d] pt-[11px]">
-          <button
-            type="button"
-            onClick={() => {
-              setPage("support");
-              close();
-            }}
-            className={`flex h-[39px] w-full items-center gap-[11px] rounded-[7px] px-2.5 text-left text-[11px] font-medium transition-colors ${
-              page === "support"
-                ? "bg-[#2448c9] text-white shadow-[inset_3px_0_#7390ff]"
-                : "text-[#98a3b4] hover:bg-[#1a2435] hover:text-white"
-            }`}
-          >
-            <CircleHelp size={18} />
-            <span>Ajuda e suporte</span>
-          </button>
-
-          {/* Configurações */}
-          <button
-            type="button"
-            onClick={() => {
-              setPage("settings");
-              close();
-            }}
-            className={`flex h-[39px] w-full items-center gap-[11px] rounded-[7px] px-2.5 text-left text-[11px] font-medium transition-colors ${
-              page === "settings"
-                ? "bg-[#2448c9] text-white shadow-[inset_3px_0_#7390ff]"
-                : "text-[#98a3b4] hover:bg-[#1a2435] hover:text-white"
-            }`}
-          >
-            <Settings size={18} />
-            <span>Configurações</span>
-          </button>
 
           {/* Usuário */}
           <div className="mt-[9px] flex items-center gap-[9px] px-2 pb-0 pt-[11px]">

@@ -23,9 +23,7 @@ export type Page =
   | "sensors"
   | "reports"
   | "organization"
-  | "admin"
-  | "support"
-  | "settings";
+  | "admin";
 
 export const navItems: {
   id: Page;
