@@ -11,6 +11,7 @@ The repository contains the project documentation and the initial backend API fo
 - [`docs/architecture.md`](docs/architecture.md): component boundaries and data ownership.
 - [`docs/backend-api.md`](docs/backend-api.md): implemented backend API, endpoints, setup, and next steps.
 - [`docs/poc-checklist.md`](docs/poc-checklist.md): PoC checklist — what's done vs. still needed, verified against the code.
+- [`docs/consolidation-followup.md`](docs/consolidation-followup.md): Consolidation follow-up — what was completed, what is partial, what remains.
 
 ## Repository Structure
 
