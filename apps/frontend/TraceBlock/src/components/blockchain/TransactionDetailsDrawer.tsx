@@ -57,7 +57,7 @@ Este comprovante contém dados demonstrativos da interface TraceBlock.
     const link = document.createElement("a");
 
     link.href = url;
-    link.download = `comprovante-${transaction.block.replace("#", "")}.txt`;
+    link.download = `comprovante-${transaction.block ?? "pendente"}.txt`;
     link.click();
 
     URL.revokeObjectURL(url);
@@ -66,12 +66,12 @@ Este comprovante contém dados demonstrativos da interface TraceBlock.
   const details = [
     {
       label: "Número do bloco",
-      value: transaction.block,
+      value: transaction.block ?? "—",
       icon: Blocks,
     },
     {
       label: "Hash do bloco anterior",
-      value: "0x3ac8...12f0",
+      value: transaction.previousBlockHash ?? "—",
       icon: Hash,
     },
     {
@@ -81,7 +81,7 @@ Este comprovante contém dados demonstrativos da interface TraceBlock.
     },
     {
       label: "Responsável",
-      value: "0xA4F2...8D31",
+      value: transaction.party,
       icon: UserRound,
     },
   ];
@@ -99,12 +99,14 @@ Este comprovante contém dados demonstrativos da interface TraceBlock.
     },
     {
       label: "Smart Contract",
-      value: "CustodyTransfer.v2.4",
+      value: transaction.contractAddress ?? "—",
       icon: FileCode2,
     },
     {
       label: "Confirmações",
-      value: confirmed ? "4 de 4 nós" : "Aguardando validação",
+      value: transaction.confirmations == null
+        ? "Aguardando registro na rede"
+        : `${transaction.confirmations} bloco(s)`,
       icon: ShieldCheck,
     },
   ];
@@ -125,7 +127,7 @@ Este comprovante contém dados demonstrativos da interface TraceBlock.
         <div className="sticky top-0 z-10 -mx-5 mb-5 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
           <div>
             <span className="text-[8px] font-bold uppercase tracking-wider text-slate-400">
-              Blockchain
+              Registro on-chain
             </span>
 
             <h2
@@ -177,7 +179,7 @@ Este comprovante contém dados demonstrativos da interface TraceBlock.
 
             <span className="text-[8px] text-slate-500">
               {confirmed
-                ? "Validada por 4 nós da rede"
+                ? `${transaction.confirmations ?? 0} confirmações na rede`
                 : "Aguardando conclusão da validação"}
             </span>
           </div>
@@ -265,9 +267,8 @@ Este comprovante contém dados demonstrativos da interface TraceBlock.
           <ShieldCheck size={17} className="shrink-0 text-blue-600" />
 
           <p className="text-[9px] leading-relaxed text-slate-600">
-            Os dados apresentados representam o registro da operação na
-            interface demonstrativa. A validação real depende da integração
-            com a rede Blockchain.
+            Hash, bloco, confirmações e contrato vêm da rede configurada.
+            Os nomes e dados do lote são associados pelo TraceBlock.
           </p>
         </div>
 

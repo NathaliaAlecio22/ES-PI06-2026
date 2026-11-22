@@ -467,6 +467,113 @@ export async function getChainStatus(): Promise<ChainStatus> {
   return { chainId: Number(network.chainId), blockNumber };
 }
 
+export type BlockchainHistoryBlock = {
+  number: number;
+  hash: string;
+  previousHash: string;
+  time: string;
+  timestamp: string;
+  transactionsCount: number;
+  active: boolean;
+};
+
+export type BlockchainTransactionDetails = {
+  hash: string;
+  blockNumber: number | null;
+  blockHash: string | null;
+  previousBlockHash: string | null;
+  timestamp: string | null;
+  status: "Confirmada" | "Em análise" | "Falhou";
+  confirmations: number | null;
+  contractAddress: string | null;
+};
+
+export async function getBlockchainHistoryData(
+  transactionHashes: string[],
+): Promise<{
+  totalBlocks: number;
+  lastBlockTime: string;
+  networkStatus: "Operacional";
+  blocks: BlockchainHistoryBlock[];
+  transactions: BlockchainTransactionDetails[];
+}> {
+  const provider = getProvider();
+  const latestBlockNumber = await provider.getBlockNumber();
+  const recentBlockNumbers = Array.from(
+    { length: Math.min(8, latestBlockNumber + 1) },
+    (_, index) => latestBlockNumber - index,
+  );
+  const uniqueHashes = [...new Set(transactionHashes)];
+  const receipts = await Promise.all(
+    uniqueHashes.map(async (hash) => {
+      if (!ethers.isHexString(hash, 32)) {
+        throw new Error(`Invalid transaction hash in history: ${hash}`);
+      }
+      return [hash, await provider.getTransactionReceipt(hash)] as const;
+    }),
+  );
+
+  const blockNumbers = new Set(recentBlockNumbers);
+  for (const [, receipt] of receipts) {
+    if (receipt) blockNumbers.add(receipt.blockNumber);
+  }
+  const blockEntries = await Promise.all(
+    [...blockNumbers].map(async (blockNumber) => [
+      blockNumber,
+      await provider.getBlock(blockNumber),
+    ] as const),
+  );
+  const blocksByNumber = new Map<number, ethers.Block>();
+  for (const [blockNumber, block] of blockEntries) {
+    if (block) blocksByNumber.set(blockNumber, block);
+  }
+  const latestBlock = blocksByNumber.get(latestBlockNumber);
+  if (!latestBlock) {
+    throw new Error(`Latest block ${latestBlockNumber} is unavailable from the RPC provider`);
+  }
+
+  return {
+    totalBlocks: latestBlockNumber + 1,
+    lastBlockTime: new Date(latestBlock.timestamp * 1000).toISOString(),
+    networkStatus: "Operacional",
+    blocks: recentBlockNumbers.flatMap((blockNumber, index) => {
+      const block = blocksByNumber.get(blockNumber);
+      return block
+        ? [{
+          number: block.number,
+          hash: block.hash,
+          previousHash: block.parentHash,
+          time: new Date(block.timestamp * 1000).toISOString(),
+          timestamp: new Date(block.timestamp * 1000).toISOString(),
+          transactionsCount: block.transactions.length,
+          active: index === 0,
+        }]
+        : [];
+    }),
+    transactions: receipts.map(([hash, receipt]) => {
+      const block = receipt ? blocksByNumber.get(receipt.blockNumber) : undefined;
+      return {
+        hash,
+        blockNumber: receipt?.blockNumber ?? null,
+        blockHash: receipt?.blockHash ?? null,
+        previousBlockHash: block?.parentHash ?? null,
+        timestamp: block ? new Date(block.timestamp * 1000).toISOString() : null,
+        status: !receipt
+          ? "Em análise"
+          : receipt.status === 1
+            ? "Confirmada"
+            : receipt.status === 0
+              ? "Falhou"
+              : "Em análise",
+        confirmations: receipt
+          ? Math.max(0, latestBlockNumber - receipt.blockNumber + 1)
+          : null,
+        contractAddress: receipt?.to ?? receipt?.contractAddress ?? null,
+      };
+    }),
+  };
+}
+
 export async function getWorkflowAdmin(workflowAddress: string): Promise<string> {
   const contract = getWorkflowContract(workflowAddress);
   return (await contract.admin()) as string;

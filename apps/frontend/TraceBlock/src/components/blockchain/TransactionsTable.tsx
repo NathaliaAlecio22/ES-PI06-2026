@@ -21,6 +21,7 @@ function StatusBadge({ status }: { status: Transaction["status"] }) {
   const styles = {
     Confirmada: "border-green-100 bg-green-50 text-green-700",
     "Em análise": "border-amber-100 bg-amber-50 text-amber-700",
+    Falhou: "border-red-100 bg-red-50 text-red-700",
   };
 
   return (
@@ -80,6 +81,7 @@ export default function TransactionsTable({
             <option value="Transferência de custódia">
               Transferência de custódia
             </option>
+            <option value="Criação de cadeia">Criação de cadeia</option>
             <option value="Leitura de condição">
               Leitura de condição
             </option>
@@ -142,7 +144,7 @@ export default function TransactionsTable({
                   </td>
 
                   <td className="whitespace-nowrap px-3 py-4 font-mono text-[9px] text-slate-600">
-                    {transaction.block}
+                    {transaction.block ?? "—"}
                   </td>
 
                   <td className="whitespace-nowrap px-3 py-4 text-[9px] text-slate-700">

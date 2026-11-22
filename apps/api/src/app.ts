@@ -45,15 +45,11 @@ import { z } from "zod";
 import {
 
   buildDataHash,
-
   buildTransferDigest,
-
   createBatch,
-
   createWorkflow,
-
   getBatchState,
-
+  getBlockchainHistoryData,
   getChainStatus,
 
   getConditionBreaches,
@@ -1476,7 +1472,91 @@ app.post("/api/batches/:batchId/transfers", async (request, response) => {
 
 });
 
+app.get("/api/blockchain/history", async (_request, response) => {
+  try {
+    const [movements, workflows, movementCount, workflowCount] = await Promise.all([
+      prisma.movimentacao.findMany({
+        where: { tx_hash: { not: null } },
+        orderBy: [{ data_movimentacao: "desc" }, { id: "desc" }],
+        take: 100,
+        include: {
+          lote: { include: { produto: true } },
+          participante_movimentacao_origem_idToparticipante: true,
+          participante_movimentacao_destino_idToparticipante: true,
+        },
+      }),
+      prisma.cadeia_custodia.findMany({
+        where: { tx_hash_criacao: { not: null } },
+        orderBy: [{ data_criacao: "desc" }, { id: "desc" }],
+        take: 100,
+        include: { organizacao: true },
+      }),
+      prisma.movimentacao.count({ where: { tx_hash: { not: null } } }),
+      prisma.cadeia_custodia.count({ where: { tx_hash_criacao: { not: null } } }),
+    ]);
 
+    const indexedTransactions = [
+      ...movements.flatMap((movement) => movement.tx_hash
+        ? [{
+          hash: movement.tx_hash,
+          event: "Transferência de custódia",
+          item: `${movement.lote.codigo} — ${movement.lote.produto.nome}`,
+          party: movement.participante_movimentacao_destino_idToparticipante.nome,
+          from: movement.participante_movimentacao_origem_idToparticipante?.wallet_address ?? undefined,
+          to: movement.participante_movimentacao_destino_idToparticipante.wallet_address ?? undefined,
+          date: movement.data_movimentacao?.toISOString() ?? "",
+          location: movement.localizacao ?? undefined,
+        }]
+        : []),
+      ...workflows.flatMap((workflow) => workflow.tx_hash_criacao
+        ? [{
+          hash: workflow.tx_hash_criacao,
+          event: "Criação de cadeia",
+          item: workflow.nome,
+          party: workflow.organizacao.nome,
+          from: undefined,
+          to: workflow.endereco_contrato,
+          date: workflow.data_criacao.toISOString(),
+          location: undefined,
+        }]
+        : []),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 100);
+
+    const chainHistory = await getBlockchainHistoryData(
+      indexedTransactions.map((transaction) => transaction.hash),
+    );
+    const detailsByHash = new Map(
+      chainHistory.transactions.map((transaction) => [transaction.hash.toLowerCase(), transaction]),
+    );
+    const transactions = indexedTransactions.map((transaction) => {
+      const details = detailsByHash.get(transaction.hash.toLowerCase());
+      return {
+        ...transaction,
+        block: details?.blockNumber ?? null,
+        date: details?.timestamp ?? transaction.date,
+        status: details?.status ?? "Em análise",
+        txHash: transaction.hash,
+        previousBlockHash: details?.previousBlockHash ?? undefined,
+        contractAddress: details?.contractAddress ?? undefined,
+        confirmations: details?.confirmations ?? undefined,
+      };
+    });
+
+    response.status(200).json({
+      stats: {
+        totalBlocks: chainHistory.totalBlocks,
+        totalTransactions: movementCount + workflowCount,
+        lastBlockTime: chainHistory.lastBlockTime,
+        networkStatus: chainHistory.networkStatus,
+      },
+      blocks: chainHistory.blocks,
+      transactions,
+    });
+  } catch (error) {
+    console.error("Erro ao consultar histórico Blockchain:", error);
+    chainFailure(response, error);
+  }
+});
 
 app.get("/api/batches/:batchId/history", (request, response) => {
 
