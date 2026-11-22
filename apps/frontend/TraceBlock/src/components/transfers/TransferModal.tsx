@@ -62,9 +62,6 @@ export default function NewTransferModal({
   const selectedDestination = participants.find(
     (participant) => participant.id === form.destinationId,
   );
-  const availableParticipants = selectedLot?.workflowManaged
-    ? participants.filter((participant) => participant.id === selectedLot.nextDestinationId)
-    : participants;
 
   const updateForm = <K extends keyof NewTransferData>(
     field: K,
@@ -269,17 +266,9 @@ export default function NewTransferModal({
                   <select
                     id="transfer-lot"
                     value={form.lot}
-                    onChange={(event) => {
-                      const nextLot = lots.find((lot) => lot.code === event.target.value);
-                      setForm((current) => ({
-                        ...current,
-                        lot: event.target.value,
-                        destinationId: nextLot?.workflowManaged
-                          ? nextLot.nextDestinationId ?? ""
-                          : "",
-                      }));
-                      setError("");
-                    }}
+                    onChange={(event) =>
+                      updateForm("lot", event.target.value)
+                    }
                     className={inputClass}
                   >
                     <option value="">
@@ -345,9 +334,7 @@ export default function NewTransferModal({
               </h3>
 
               <p className="mb-6 mt-1 text-sm text-slate-500">
-                {selectedLot?.workflowManaged
-                  ? "O destino é fixado pelo administrador na próxima etapa da cadeia de custódia."
-                  : "Escolha um participante ativo para receber a custódia do lote."}
+                Escolha um participante ativo para receber a custódia do lote.
               </p>
 
               <label
@@ -357,17 +344,9 @@ export default function NewTransferModal({
                 Participante de destino
               </label>
 
-              {selectedLot?.workflowManaged && !selectedLot.nextDestinationId ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                  {selectedLot.workflowComplete
-                    ? "Este lote já concluiu a última etapa configurada da cadeia."
-                    : "A organização da próxima etapa não está disponível ou não possui carteira ativa."}
-                </p>
-              ) : (
               <select
                 id="transfer-destination"
                 value={form.destinationId}
-                disabled={!!selectedLot?.workflowManaged}
                 onChange={(event) =>
                   updateForm(
                     "destinationId",
@@ -380,7 +359,7 @@ export default function NewTransferModal({
                   Selecione um participante
                 </option>
 
-                {availableParticipants.map((participant) => (
+                {participants.map((participant) => (
                   <option
                     key={participant.id}
                     value={participant.id}
@@ -392,12 +371,6 @@ export default function NewTransferModal({
                   </option>
                 ))}
               </select>
-              )}
-              {selectedLot?.workflowManaged && selectedLot.nextDestinationId && (
-                <p className="mt-1 text-[11px] text-slate-400">
-                  O destino está bloqueado para respeitar a ordem definida pelo administrador.
-                </p>
-              )}
 
               {selectedDestination && (
                 <div className="mt-5 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-4">
@@ -554,9 +527,7 @@ export default function NewTransferModal({
                   </h3>
 
                   <p className="mt-1 text-sm text-slate-500">
-                    {selectedLot?.workflowManaged
-                      ? "A carteira da etapa atual assinará a operação. Após a confirmação da transação na blockchain, a custódia passa imediatamente para a organização da próxima etapa."
-                      : "A custódia só mudará para o destino depois da confirmação do recebimento."}
+                    A custódia só mudará para o destino depois da confirmação do recebimento.
                   </p>
                 </div>
 
@@ -572,9 +543,7 @@ export default function NewTransferModal({
               <div className="space-y-3 rounded-xl border border-slate-200 p-4">
                 {[
                   "Lote sob custódia da sua organização",
-                  selectedLot?.workflowManaged
-                    ? "Destino validado pela próxima etapa configurada"
-                    : "Destino selecionado entre os participantes ativos",
+                  "Destino selecionado entre os participantes ativos",
                   "Localização informada",
                   "Transferência do lote inteiro",
                 ].map((item) => (

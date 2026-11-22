@@ -33,8 +33,6 @@ const pageLabels: Record<Page, string> = {
   reports: "Relatórios",
   organization: "Gestão da organização",
   admin: "Administração",
-  support: "Ajuda e suporte",
-  settings: "Configurações",
 };
 
 export default function Topbar({ page, openMenu, onLogout }: TopbarProps) {

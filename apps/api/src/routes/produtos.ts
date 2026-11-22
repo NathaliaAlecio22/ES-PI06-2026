@@ -1,42 +1,14 @@
 import { Prisma } from "@prisma/client";
 import { Router } from "express";
-import { z } from "zod";
+
+import { createProductRequestSchema, type CreateProductRequest } from "@provenance/shared";
 
 import { prisma } from "../lib/prisma";
+import { createBatch, revertReasonOf } from "../blockchain";
+import { ensureWorkflowForParticipante } from "../chain/org-chain";
 import { autenticar } from "../middlewares/auth.middleware";
-import {
-  createBatch,
-  deriveLotBatchId,
-  getWorkflowForOrganization,
-  getWorkflowSteps,
-  isWorkflowFactoryVersionError,
-} from "../blockchain";
-import { env } from "../config/env";
+import { createId } from "../store";
 import { loadCurrentUser } from "../utils/session";
-
-const createProductSchema = z
-  .object({
-    name: z.string().trim().min(2).max(150),
-    code: z.string().trim().min(1).max(100),
-    category: z.string().trim().min(1).max(100),
-    description: z.string().trim().max(5_000).nullable().optional(),
-    lot: z.string().trim().min(1).max(100),
-    manufacturingDate: z.iso.date(),
-    expirationDate: z.iso.date().nullable().optional(),
-    quantity: z.coerce.number().finite().positive().max(99_999_999_999.999),
-    unit: z.string().trim().min(1).max(30),
-    location: z.string().trim().min(1).max(200),
-  })
-  .refine(
-    ({ manufacturingDate, expirationDate }) =>
-      !expirationDate || expirationDate >= manufacturingDate,
-    {
-      path: ["expirationDate"],
-      message: "A validade não pode ser anterior à data de fabricação.",
-    },
-  );
-
-type CreatedProductInput = z.infer<typeof createProductSchema>;
 
 const router = Router();
 
@@ -162,7 +134,7 @@ router.get("/stats", autenticar, async (request, response) => {
 });
 
 router.post("/", autenticar, async (request, response) => {
-  const parsed = createProductSchema.safeParse(request.body);
+  const parsed = createProductRequestSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({
       message: "Confira os dados do produto e do lote.",
@@ -176,29 +148,9 @@ router.post("/", autenticar, async (request, response) => {
 
   try {
     const usuario = await loadCurrentUser(request.usuario, response);
-    if (!usuario?.participante_id) return;
+    if (!usuario?.participante_id || !usuario.participante) return;
 
-    const input: CreatedProductInput = parsed.data;
-    let workflowAddress: string | null = null;
-    if (env.WORKFLOW_FACTORY_ADDRESS) {
-      try {
-        workflowAddress = await getWorkflowForOrganization(usuario.participante_id);
-      } catch (error) {
-        if (!isWorkflowFactoryVersionError(error)) throw error;
-        console.warn(error.message);
-      }
-    }
-    const ownerWallet = usuario.participante?.wallet_address;
-    if (workflowAddress) {
-      const workflowSteps = await getWorkflowSteps(workflowAddress);
-      if (!ownerWallet || workflowSteps[0]?.assignee.toLowerCase() !== ownerWallet.toLowerCase()) {
-        response.status(409).json({
-          message: "A carteira da sua organização não está atribuída à primeira etapa da cadeia.",
-        });
-        return;
-      }
-    }
-
+    const input: CreateProductRequest = parsed.data;
     const product = await prisma.$transaction(async (transaction) => {
       const createdProduct = await transaction.produto.create({
         data: {
@@ -230,15 +182,28 @@ router.post("/", autenticar, async (request, response) => {
       return { createdProduct, lot };
     });
 
-    let batchId: string | undefined;
-    if (workflowAddress) {
-      batchId = (await deriveLotBatchId(product.lot.codigo)).toString();
-      if (!ownerWallet) throw new Error("Organization wallet disappeared while creating its chain batch");
-      await createBatch(workflowAddress, BigInt(batchId), ownerWallet);
+    // Seeds the batch on the organization's own Workflow contract (chain second — the
+    // Postgres rows above already exist by this point; an accepted PoC trade-off).
+    try {
+      const { workflowAddress, signerKey } = await ensureWorkflowForParticipante(usuario.participante);
+      const batchId = createId();
+      await createBatch(workflowAddress, batchId, usuario.participante.wallet_address!, signerKey);
+      await prisma.lote.update({
+        where: { id: product.lot.id },
+        data: { chain_batch_id: batchId.toString(), current_step_index: 0 },
+      });
+    } catch (error) {
+      const revertReason = revertReasonOf(error);
+      const detail = revertReason ?? (error instanceof Error ? error.message : String(error));
+      response.status(502).json({
+        message:
+          "O produto e o lote foram cadastrados, mas não foi possível registrar o lote na blockchain.",
+        detail,
+      });
+      return;
     }
 
     response.status(201).json({
-      ...(batchId ? { batchId } : {}),
       product: {
         code: product.createdProduct.codigo,
         name: product.createdProduct.nome,

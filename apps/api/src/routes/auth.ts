@@ -1,12 +1,17 @@
 
 import { Router } from "express";
-import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { env } from "../config/env";
 import { verifyPassword } from "../utils/password.js";
 import { gerarToken, verificarToken } from "../utils/jwt.js";
 
 import { createHmac, randomInt } from "node:crypto";
+import {
+  forgotPasswordRequestSchema,
+  loginRequestSchema,
+  resetPasswordRequestSchema,
+  verifyResetCodeRequestSchema,
+} from "@provenance/shared";
 import { enviarCodigoRecuperacao } from "../service/email.service";
 import { hashPassword } from "../utils/password.js";
 
@@ -22,21 +27,9 @@ function gerarHashCodigo(codigo: string): string {
     .digest("hex");
 }
 
-
-const loginSchema = z.object({
-  email: z.string().email().transform((email) =>
-    email.trim().toLowerCase()
-  ),
-  senha: z.string().min(1),
-});
-
 router.post("/forgot-password", async (req, res) => {
   try {
-    const schema = z.object({
-      email: z.string().email().transform((value) => value.trim().toLowerCase()),
-    });
-
-    const parsed = schema.safeParse(req.body);
+    const parsed = forgotPasswordRequestSchema.safeParse(req.body);
 
     if (!parsed.success) {
       return res.status(400).json({
@@ -110,12 +103,7 @@ router.post("/forgot-password", async (req, res) => {
 
 router.post("/verify-reset-code", async (req, res) => {
   try {
-    const schema = z.object({
-      email: z.string().email(),
-      codigo: z.string().regex(/^\d{6}$/, "Código inválido."),
-    });
-
-    const parsed = schema.safeParse(req.body);
+    const parsed = verifyResetCodeRequestSchema.safeParse(req.body);
 
     if (!parsed.success) {
       return res.status(400).json({
@@ -175,17 +163,7 @@ router.post("/verify-reset-code", async (req, res) => {
 
 router.post("/reset-password", async (req, res) => {
   try {
-    const schema = z.object({
-      email: z.string().email(),
-      codigo: z.string().regex(/^\d{6}$/),
-      senha: z.string().min(8).max(128),
-      confirmarSenha: z.string(),
-    }).refine((data) => data.senha === data.confirmarSenha, {
-      path: ["confirmarSenha"],
-      message: "As senhas não coincidem.",
-    });
-
-    const parsed = schema.safeParse(req.body);
+    const parsed = resetPasswordRequestSchema.safeParse(req.body);
 
     if (!parsed.success) {
       return res.status(400).json({
@@ -330,7 +308,7 @@ router.get("/me", async (req, res) => {
 
 router.post("/login", async (req, res) => {
   try {
-    const validation = loginSchema.safeParse(req.body);
+    const validation = loginRequestSchema.safeParse(req.body);
 
     if (!validation.success) {
       return res.status(400).json({

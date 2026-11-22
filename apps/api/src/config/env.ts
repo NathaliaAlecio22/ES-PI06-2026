@@ -17,10 +17,6 @@ const environmentSchema = z.object({
   JWT_SECRET: z.string().min(16),
   RESET_CODE_SECRET: z.string().min(16),
 
-  // Prisma CLI (prisma generate / migrate dev) reads its own datasource URL from
-  // prisma7.config.ts — documented here so a fresh clone knows it is required.
-  DIRECT_URL: z.string().optional(),
-
   // Comma-separated list of browser origins allowed to call the API.
   CORS_ORIGIN: z.string().optional(),
 

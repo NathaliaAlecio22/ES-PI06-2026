@@ -1,24 +1,13 @@
+import type { AuthenticatedUser, LoginResponse } from "@provenance/shared";
 
 export type LoginCredentials = {
   email: string;
   senha: string;
 };
 
-export type UsuarioAutenticado = {
-  id: string;
-  nome: string;
-  email: string;
-  perfil: string;
-  cargo: string | null;
-  participanteId: string;
-  empresa: string;
-};
+export type UsuarioAutenticado = AuthenticatedUser;
 
-export type LoginResponse = {
-  message: string;
-  token: string;
-  usuario: UsuarioAutenticado;
-};
+export type { LoginResponse };
 
 const apiUrl = (
   import.meta.env.VITE_API_URL ?? "http://localhost:3000/api"

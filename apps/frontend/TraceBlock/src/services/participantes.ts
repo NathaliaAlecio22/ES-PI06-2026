@@ -1,15 +1,6 @@
-export type CadastroParticipante = {
-  nomeCompleto: string;
-  email: string;
-  senha: string;
-  confirmarSenha: string;
-  telefone: string;
-  nomeOrganizacao: string;
-  cnpj: string;
-  tipo: string;
-  cargo: string;
-  aceitouTermos: boolean;
-};
+import type { RegisterParticipantRequest } from "@provenance/shared";
+
+export type CadastroParticipante = RegisterParticipantRequest;
 
 type CadastroResponse = {
   message: string;

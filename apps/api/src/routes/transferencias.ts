@@ -1,23 +1,29 @@
 import { Prisma } from "@prisma/client";
+import { ethers } from "ethers";
 import { Router, type Response } from "express";
-import { z } from "zod";
 
-import { prisma } from "../lib/prisma";
+import {
+  createTransferRequestSchema,
+  reportIssueRequestSchema,
+  type Role,
+} from "@provenance/shared";
+
 import {
   buildDataHash,
   buildTransferDigest,
-  createBatch,
-  deriveLotBatchId,
-  getBatchState,
-  getParticipantRole,
-  getWorkflowForOrganization,
-  getWorkflowSteps,
-  isWorkflowFactoryVersionError,
-  recoverTransferSigner,
   revertReasonOf,
   transferCustody,
 } from "../blockchain";
+import {
+  chainRoleForTipo,
+  deliverableHashForTransfer,
+  ensureParticipantRegistered,
+  orgSignerKey,
+  readStoredSteps,
+  reportConditions,
+} from "../chain/org-chain";
 import { env } from "../config/env";
+import { prisma } from "../lib/prisma";
 import { autenticar } from "../middlewares/auth.middleware";
 import { loadCurrentUser, roleFromProfile } from "../utils/session";
 
@@ -40,6 +46,7 @@ const storageLabels: Record<string, string> = {
   ARMAZENADO: "Armazenado",
   ATIVO: "Armazenado",
   PENDENTE: "Pendente",
+  COM_OCORRENCIA: "Com ocorrência",
 };
 
 class HttpError extends Error {
@@ -61,38 +68,24 @@ function handleError(
     return;
   }
 
-  const reason = revertReasonOf(error);
-  if (reason) {
-    response.status(409).json({ message: `A blockchain rejeitou a transferência: ${reason}` });
-    return;
-  }
-
   console.error(fallback, error);
   response.status(500).json({ message: fallback });
 }
 
-const optionalNumber = z.preprocess(
-  (value) => (value === "" || value == null ? undefined : value),
-  z.coerce.number().finite().optional(),
-);
-
-const createSchema = z.object({
-  lot: z.string().trim().min(1).max(100),
-  destinationId: z.string().regex(/^\d+$/, "Destino inválido."),
-  location: z.string().trim().min(1).max(200),
-  temperature: optionalNumber,
-  humidity: optionalNumber.refine(
-    (value) =>
-      value === undefined || (value >= 0 && value <= 100),
-    "A umidade deve estar entre 0 e 100%.",
-  ),
-  notes: z.string().trim().max(2_000).optional(),
-  signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/).optional(),
-});
-
-const issueSchema = z.object({
-  notes: z.string().trim().min(3).max(2_000),
-});
+/**
+ * Replies for a failed chain operation (same classification as `chainFailure` in app.ts):
+ * a rejection by the contract itself is a client-fixable 409 carrying the decoded reason;
+ * anything else (RPC down, missing configuration) is a 502.
+ */
+function chainTransferFailure(response: Response, error: unknown): void {
+  const revertReason = revertReasonOf(error);
+  if (revertReason !== undefined) {
+    response.status(409).json({ message: `A blockchain rejeitou a operação: ${revertReason}` });
+    return;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  response.status(502).json({ message: `Erro de comunicação com a blockchain: ${message}` });
+}
 
 const include = {
   lote: { include: { produto: true } },
@@ -161,139 +154,8 @@ function paramId(raw: string | string[] | undefined): bigint {
   if (typeof value !== "string" || !/^\d+$/.test(value)) {
     throw new HttpError(400, "Transferência inválida.");
   }
+
   return BigInt(value);
-}
-
-type ChainTransferContext = {
-  workflowAddress: string;
-  batchId: bigint;
-  signer: string;
-  recipient: string;
-  stepIndex: number;
-  deliverableHash: string;
-  digest: string;
-  custodyStageId: bigint | null;
-};
-
-async function chainTransferContext(input: {
-  lotCode: string;
-  destinationId: bigint;
-  participantId: bigint;
-  location: string;
-  temperature?: number;
-  humidity?: number;
-}): Promise<ChainTransferContext | null> {
-  const lot = await prisma.lote.findUnique({
-    where: { codigo: input.lotCode },
-    include: { produto: true },
-  });
-  if (!lot) throw new HttpError(404, "Lote não encontrado.");
-  if (lot.responsavel_atual_id !== input.participantId) {
-    throw new HttpError(403, "Seu lote não está sob a custódia da sua organização.");
-  }
-
-  const savedWorkflow = lot.produto.fabricante_id
-    ? await prisma.cadeia_custodia.findUnique({
-      where: { organizacao_id: lot.produto.fabricante_id },
-      include: { etapas: { orderBy: { ordem: "asc" } } },
-    })
-    : null;
-  const workflowAddress = savedWorkflow?.endereco_contrato ?? (lot.produto.fabricante_id
-    ? await getWorkflowForOrganization(lot.produto.fabricante_id).catch((error: unknown) => {
-      if (isWorkflowFactoryVersionError(error)) return null;
-      throw error;
-    })
-    : null);
-  if (!workflowAddress) return null;
-
-  const [steps, source] = await Promise.all([
-    getWorkflowSteps(workflowAddress),
-    prisma.participante.findUnique({
-      where: { id: input.participantId },
-      select: { wallet_address: true },
-    }),
-  ]);
-  if (!source?.wallet_address) {
-    throw new HttpError(409, "Cadastre a carteira da sua organização para transferir este lote.");
-  }
-
-  const batchId = await deriveLotBatchId(input.lotCode);
-  let state = await getBatchState(workflowAddress, batchId);
-  if (state.currentCustodian === "0x0000000000000000000000000000000000000000") {
-    if (source.wallet_address.toLowerCase() !== steps[0]?.assignee.toLowerCase()) {
-      throw new HttpError(409, "Este lote ainda não foi iniciado na primeira etapa da cadeia.");
-    }
-    await createBatch(workflowAddress, batchId, source.wallet_address);
-    state = await getBatchState(workflowAddress, batchId);
-  }
-  if (state.status !== "ACTIVE") {
-    throw new HttpError(409, "Este lote está comprometido e não aceita transferências.");
-  }
-  if (state.currentCustodian.toLowerCase() !== source.wallet_address.toLowerCase()) {
-    throw new HttpError(409, "A carteira da sua organização não corresponde ao custodiante atual da blockchain.");
-  }
-  const currentStep = steps[state.currentStepIndex];
-  const nextStep = steps[state.currentStepIndex + 1];
-  if (!currentStep || !nextStep) {
-    throw new HttpError(409, "O lote já concluiu a etapa final da cadeia.");
-  }
-  if (currentStep.assignee.toLowerCase() !== source.wallet_address.toLowerCase()) {
-    throw new HttpError(403, "Sua organização não está atribuída à etapa atual.");
-  }
-
-  const currentSavedStage = savedWorkflow?.etapas.find((stage) => stage.ordem === state.currentStepIndex);
-  if (currentSavedStage?.responsavel_id && currentSavedStage.responsavel_id !== input.participantId) {
-    throw new HttpError(403, "Sua organização não é a responsável cadastrada para a etapa atual.");
-  }
-
-  const [destination, registeredRole, nextRegisteredRole] = await Promise.all([
-    prisma.participante.findUnique({
-      where: { id: input.destinationId },
-      select: { wallet_address: true, ativo: true },
-    }),
-    getParticipantRole(workflowAddress, source.wallet_address),
-    getParticipantRole(workflowAddress, nextStep.assignee),
-  ]);
-  if (!destination?.ativo || !destination.wallet_address) {
-    throw new HttpError(400, "Destino inválido ou sem carteira cadastrada.");
-  }
-  if (destination.wallet_address.toLowerCase() !== nextStep.assignee.toLowerCase()) {
-    throw new HttpError(409, "O destino não é o responsável definido para a próxima etapa.");
-  }
-  const nextSavedStage = savedWorkflow?.etapas.find((stage) => stage.ordem === state.currentStepIndex + 1);
-  if (nextSavedStage?.responsavel_id && nextSavedStage.responsavel_id !== input.destinationId) {
-    throw new HttpError(409, "O participante selecionado não corresponde ao responsável salvo para a próxima etapa.");
-  }
-  if (registeredRole !== currentStep.requiredRole) {
-    throw new HttpError(403, "A carteira não possui o papel exigido para a etapa atual.");
-  }
-  if (nextRegisteredRole !== nextStep.requiredRole) {
-    throw new HttpError(409, "A carteira da próxima etapa ainda não está autorizada na blockchain. O administrador deve sincronizar os responsáveis da cadeia.");
-  }
-
-  const conditionReferences = [
-    ...(input.temperature == null ? [] : [`temperature:${input.temperature}`]),
-    ...(input.humidity == null ? [] : [`humidity:${input.humidity}`]),
-  ];
-  const dataHash = buildDataHash({ locationReference: input.location, conditionReferences });
-  const digest = buildTransferDigest({
-    workflowAddress,
-    chainId: env.CHAIN_ID,
-    batchId,
-    to: destination.wallet_address,
-    deliverableHash: currentStep.specificationHash,
-    dataHash,
-  });
-  return {
-    workflowAddress,
-    batchId,
-    signer: source.wallet_address,
-    recipient: destination.wallet_address,
-    stepIndex: state.currentStepIndex,
-    deliverableHash: currentStep.specificationHash,
-    digest,
-    custodyStageId: nextSavedStage?.id ?? null,
-  };
 }
 
 // ======================================================
@@ -315,6 +177,7 @@ router.get("/opcoes", autenticar, async (request, response) => {
           status: {
             in: ["ATIVO", "ARMAZENADO"],
           },
+          chain_batch_id: { not: null },
           movimentacao: {
             none: {
               tipo: "TRANSFERENCIA",
@@ -323,7 +186,7 @@ router.get("/opcoes", autenticar, async (request, response) => {
           },
         },
         include: {
-          produto: true,
+          produto: { include: { fabricante: true } },
         },
         orderBy: {
           id: "desc",
@@ -341,7 +204,6 @@ router.get("/opcoes", autenticar, async (request, response) => {
           id: true,
           nome: true,
           tipo: true,
-          wallet_address: true,
         },
         orderBy: {
           nome: "asc",
@@ -349,41 +211,17 @@ router.get("/opcoes", autenticar, async (request, response) => {
       }),
     ]);
 
-    const lotsWithNextStage = await Promise.all(lots.map(async (lot) => {
-      const savedWorkflow = lot.produto.fabricante_id
-        ? await prisma.cadeia_custodia.findUnique({
-          where: { organizacao_id: lot.produto.fabricante_id },
-          select: { endereco_contrato: true },
-        })
-        : null;
-      const workflowAddress = savedWorkflow?.endereco_contrato ?? (env.WORKFLOW_FACTORY_ADDRESS && lot.produto.fabricante_id
-        ? await getWorkflowForOrganization(lot.produto.fabricante_id).catch((error: unknown) => {
-          if (isWorkflowFactoryVersionError(error)) return null;
-          throw error;
-        })
-        : null);
-      if (!workflowAddress) {
-        return { lot, nextDestinationId: null, workflowManaged: false, workflowComplete: false };
-      }
-      const steps = await getWorkflowSteps(workflowAddress);
-      const batchId = await deriveLotBatchId(lot.codigo);
-      const state = await getBatchState(workflowAddress, batchId);
-      const nextAssignee = steps[state.currentStepIndex + 1]?.assignee;
-      const nextParticipant = nextAssignee
-        ? participants.find((participant) =>
-          participant.wallet_address?.toLowerCase() === nextAssignee.toLowerCase(),
-        )
-        : undefined;
-      return {
-        lot,
-        nextDestinationId: nextParticipant?.id.toString() ?? null,
-        workflowManaged: true,
-        workflowComplete: !nextAssignee,
-      };
-    }));
-
-    response.json({
-      lots: lotsWithNextStage.map(({ lot, nextDestinationId, workflowManaged, workflowComplete }) => ({
+    // Each lot's next step lives on its manufacturer's workflow (the contract `createBatch`
+    // was called on — see produtos.ts). Only lots with a transferable next step are offered;
+    // the destination list is narrowed to the roles any of those next steps require (the
+    // authoritative role check happens again at transfer-creation time).
+    const neededRoles = new Set<Role>();
+    const availableLots = lots.flatMap((lot) => {
+      const steps = readStoredSteps(lot.produto.fabricante?.workflow_steps ?? null);
+      const nextStep = steps?.[lot.current_step_index + 1];
+      if (!nextStep) return [];
+      neededRoles.add(nextStep.requiredRole);
+      return [{
         id: lot.id.toString(),
         code: lot.codigo,
         product: lot.produto.nome,
@@ -391,12 +229,23 @@ router.get("/opcoes", autenticar, async (request, response) => {
         unit: lot.unidade_medida ?? "",
         currentOwner: user.participante?.nome ?? "",
         location: lot.localizacao_origem ?? "",
-        nextDestinationId,
-        workflowManaged,
-        workflowComplete,
-      })),
+        nextRole: nextStep.requiredRole,
+      }];
+    });
 
-      participants: participants.map((participant) => ({
+    const eligibleParticipants = participants.filter((participant) => {
+      if (!participant.tipo) return false;
+      try {
+        return neededRoles.has(chainRoleForTipo(participant.tipo));
+      } catch {
+        return false;
+      }
+    });
+
+    response.json({
+      lots: availableLots,
+
+      participants: eligibleParticipants.map((participant) => ({
         id: participant.id.toString(),
         name: participant.nome,
         type: participant.tipo,
@@ -408,44 +257,6 @@ router.get("/opcoes", autenticar, async (request, response) => {
       response,
       "Não foi possível carregar as opções de transferência.",
     );
-  }
-});
-
-router.post("/assinatura", autenticar, async (request, response) => {
-  const parsed = createSchema.safeParse(request.body);
-  if (!parsed.success) {
-    response.status(400).json({ message: "Confira os dados da transferência." });
-    return;
-  }
-  try {
-    const user = await loadCurrentUser(request.usuario, response);
-    if (!user?.participante_id) return;
-    if (roleFromProfile(user.perfil) === "VIEWER") {
-      response.status(403).json({ message: "Seu perfil não permite criar transferências." });
-      return;
-    }
-
-    const context = await chainTransferContext({
-      lotCode: parsed.data.lot,
-      destinationId: BigInt(parsed.data.destinationId),
-      participantId: user.participante_id,
-      location: parsed.data.location,
-      temperature: parsed.data.temperature,
-      humidity: parsed.data.humidity,
-    });
-    if (!context) {
-      response.json({ blockchainRequired: false });
-      return;
-    }
-    response.json({
-      blockchainRequired: true,
-      digest: context.digest,
-      signer: context.signer,
-      recipient: context.recipient,
-      stepIndex: context.stepIndex,
-    });
-  } catch (error) {
-    handleError(error, response, "Não foi possível preparar a assinatura da transferência.");
   }
 });
 
@@ -542,7 +353,7 @@ router.get("/stats", autenticar, async (request, response) => {
 // ======================================================
 
 router.post("/", autenticar, async (request, response) => {
-  const parsed = createSchema.safeParse(request.body);
+  const parsed = createTransferRequestSchema.safeParse(request.body);
 
   if (!parsed.success) {
     response.status(400).json({
@@ -582,36 +393,13 @@ router.post("/", autenticar, async (request, response) => {
       return;
     }
 
-    const chainContext = await chainTransferContext({
-      lotCode: input.lot,
-      destinationId,
-      participantId,
-      location: input.location,
-      temperature: input.temperature,
-      humidity: input.humidity,
-    });
-    if (chainContext) {
-      if (!input.signature) {
-        response.status(400).json({ message: "A carteira da etapa atual precisa assinar esta transferência." });
-        return;
-      }
-      let signer: string;
-      try {
-        signer = recoverTransferSigner(chainContext.digest, input.signature);
-      } catch {
-        response.status(401).json({ message: "Assinatura da carteira inválida." });
-        return;
-      }
-      if (signer.toLowerCase() !== chainContext.signer.toLowerCase()) {
-        response.status(401).json({ message: "A assinatura deve vir da carteira responsável pela etapa atual." });
-        return;
-      }
-    }
-
     const created = await prisma.$transaction(async (tx) => {
       const lot = await tx.lote.findUnique({
         where: {
           codigo: input.lot,
+        },
+        include: {
+          produto: { include: { fabricante: true } },
         },
       });
 
@@ -631,6 +419,17 @@ router.post("/", autenticar, async (request, response) => {
           409,
           "Este lote não está disponível para transferência.",
         );
+      }
+
+      if (!lot.chain_batch_id) {
+        throw new HttpError(409, "Este lote ainda não foi registrado na blockchain.");
+      }
+
+      const steps = readStoredSteps(lot.produto.fabricante?.workflow_steps ?? null);
+      const nextIndex = lot.current_step_index + 1;
+      const nextStep = steps?.[nextIndex];
+      if (!nextStep) {
+        throw new HttpError(409, "Este lote já concluiu o workflow.");
       }
 
       const pendingMovement = await tx.movimentacao.findFirst({
@@ -664,6 +463,22 @@ router.post("/", autenticar, async (request, response) => {
         );
       }
 
+      let destinationRole: Role;
+      try {
+        destinationRole = chainRoleForTipo(destination.tipo ?? "");
+      } catch {
+        throw new HttpError(
+          409,
+          "O destino não possui um tipo de participante reconhecido pela blockchain.",
+        );
+      }
+      if (destinationRole !== nextStep.requiredRole) {
+        throw new HttpError(
+          409,
+          "O destino não possui o papel exigido pela próxima etapa do workflow.",
+        );
+      }
+
       // Reserva o lote de forma atômica.
       // Impede duas saídas simultâneas do mesmo lote.
 
@@ -687,22 +502,6 @@ router.post("/", autenticar, async (request, response) => {
         );
       }
 
-      const chainResult = chainContext
-        ? await transferCustody(chainContext.workflowAddress, {
-          batchId: chainContext.batchId,
-          to: chainContext.recipient,
-          deliverableHash: chainContext.deliverableHash,
-          dataHash: buildDataHash({
-            locationReference: input.location,
-            conditionReferences: [
-              ...(input.temperature == null ? [] : [`temperature:${input.temperature}`]),
-              ...(input.humidity == null ? [] : [`humidity:${input.humidity}`]),
-            ],
-          }),
-          signature: input.signature ?? "",
-        })
-        : undefined;
-
       const movement = await tx.movimentacao.create({
         data: {
           lote_id: lot.id,
@@ -710,10 +509,7 @@ router.post("/", autenticar, async (request, response) => {
           destino_id: destinationId,
           usuario_id: user.id,
           tipo: "TRANSFERENCIA",
-          status: chainContext ? STATUS.CONFIRMED : STATUS.PENDING,
-          confirmado_em: chainContext ? new Date() : null,
-          tx_hash: chainResult?.txHash ?? null,
-          status_blockchain: chainContext ? "CONFIRMADA" : "PENDENTE",
+          status: STATUS.PENDING,
           localizacao: input.location,
           quantidade: lot.quantidade,
 
@@ -728,20 +524,9 @@ router.post("/", autenticar, async (request, response) => {
               : null,
 
           observacoes: input.notes || null,
-          etapa_cadeia_id: chainContext?.custodyStageId ?? null,
         },
         include,
       });
-
-      if (chainContext) {
-        await tx.lote.update({
-          where: { id: lot.id },
-          data: {
-            responsavel_atual_id: destinationId,
-            status: "ARMAZENADO",
-          },
-        });
-      }
 
       // Histórico de condições do lote.
       if (
@@ -767,9 +552,7 @@ router.post("/", autenticar, async (request, response) => {
         });
       }
 
-      return chainContext
-        ? tx.movimentacao.findUniqueOrThrow({ where: { id: movement.id }, include })
-        : movement;
+      return movement;
     });
 
     response.status(201).json({
@@ -790,6 +573,12 @@ router.post("/", autenticar, async (request, response) => {
 // Aqui a custódia muda.
 // ======================================================
 
+const confirmInclude = {
+  lote: { include: { produto: { include: { fabricante: true } } } },
+  participante_movimentacao_origem_idToparticipante: true,
+  participante_movimentacao_destino_idToparticipante: true,
+} satisfies Prisma.movimentacaoInclude;
+
 router.post("/:id/confirmar", autenticar, async (request, response) => {
   try {
     const user = await loadCurrentUser(request.usuario, response);
@@ -807,63 +596,145 @@ router.post("/:id/confirmar", autenticar, async (request, response) => {
 
     const id = paramId(request.params.id);
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const movement = await tx.movimentacao.findFirst({
-        where: {
-          id,
-          destino_id: participantId,
-          tipo: "TRANSFERENCIA",
-          status: STATUS.PENDING,
-        },
-      });
-
-      if (!movement) {
-        throw new HttpError(
-          404,
-          "Transferência pendente não encontrada para a sua organização.",
-        );
-      }
-
-      const claimed = await tx.movimentacao.updateMany({
-        where: {
-          id,
-          destino_id: participantId,
-          status: STATUS.PENDING,
-        },
-        data: {
-          status: STATUS.CONFIRMED,
-          confirmado_em: new Date(),
-        },
-      });
-
-      if (claimed.count !== 1) {
-        throw new HttpError(
-          409,
-          "Esta transferência já foi processada.",
-        );
-      }
-
-      await tx.lote.update({
-        where: {
-          id: movement.lote_id,
-        },
-        data: {
-          responsavel_atual_id: participantId,
-          status: "ARMAZENADO",
-        },
-      });
-
-      return tx.movimentacao.findUniqueOrThrow({
-        where: {
-          id,
-        },
-        include,
-      });
+    const movement = await prisma.movimentacao.findFirst({
+      where: {
+        id,
+        destino_id: participantId,
+        tipo: "TRANSFERENCIA",
+        status: STATUS.PENDING,
+      },
+      include: confirmInclude,
     });
 
-    response.json({
-      transfer: toTransfer(updated, participantId),
-    });
+    if (!movement) {
+      response.status(404).json({
+        message: "Transferência pendente não encontrada para a sua organização.",
+      });
+      return;
+    }
+
+    const lot = movement.lote;
+    const origin = movement.participante_movimentacao_origem_idToparticipante;
+    const destination = movement.participante_movimentacao_destino_idToparticipante;
+    const fabricante = lot.produto.fabricante;
+
+    if (!lot.chain_batch_id) {
+      response.status(409).json({ message: "Este lote não possui registro on-chain." });
+      return;
+    }
+    if (
+      !origin?.wallet_address ||
+      !destination.wallet_address ||
+      !fabricante?.workflow_address ||
+      !fabricante.wallet_address
+    ) {
+      response.status(502).json({
+        message: "Dados on-chain incompletos para esta transferência.",
+      });
+      return;
+    }
+
+    const steps = readStoredSteps(fabricante.workflow_steps);
+    const nextIndex = lot.current_step_index + 1;
+    const nextStep = steps?.[nextIndex];
+    if (!nextStep) {
+      response.status(409).json({ message: "Este lote já concluiu o workflow." });
+      return;
+    }
+
+    const workflowAddress = fabricante.workflow_address;
+    const originSignerKey = orgSignerKey(origin.wallet_address);
+
+    try {
+      // Onboard the destination into the manufacturer's workflow for the next step's
+      // role, if it is not already registered there (first transfer of this type).
+      await ensureParticipantRegistered({
+        workflowAddress,
+        participant: destination.wallet_address,
+        role: nextStep.requiredRole,
+        adminPrivateKey: orgSignerKey(fabricante.wallet_address),
+      });
+
+      const deliverableHash = deliverableHashForTransfer({
+        lot: lot.codigo,
+        product: lot.produto.nome,
+        quantity: movement.quantidade?.toString() ?? null,
+        unit: lot.unidade_medida,
+        location: movement.localizacao,
+        notes: movement.observacoes,
+        temperature: movement.temperatura?.toString() ?? null,
+        humidity: movement.umidade?.toString() ?? null,
+      });
+      const dataHash = buildDataHash({
+        locationReference: movement.localizacao ?? undefined,
+        conditionReferences: [],
+      });
+      const batchId = BigInt(lot.chain_batch_id);
+      const digest = buildTransferDigest({
+        workflowAddress,
+        chainId: env.CHAIN_ID,
+        batchId,
+        to: destination.wallet_address,
+        deliverableHash,
+        dataHash,
+      });
+      // Custodial signing model: the API holds the current custodian's key, so it signs
+      // the transfer digest on the origin organization's behalf (docs/poc-checklist.md).
+      const signature = await new ethers.Wallet(originSignerKey).signMessage(
+        ethers.getBytes(digest),
+      );
+
+      const result = await transferCustody(
+        workflowAddress,
+        { batchId, to: destination.wallet_address, deliverableHash, dataHash, signature },
+        originSignerKey,
+      );
+
+      let loteStatus = "ARMAZENADO";
+      if (movement.temperatura != null || movement.umidade != null) {
+        const reported = await reportConditions({
+          workflowAddress,
+          batchId,
+          signerKey: originSignerKey,
+          temperature: movement.temperatura != null ? movement.temperatura.toNumber() : null,
+          humidity: movement.umidade != null ? movement.umidade.toNumber() : null,
+        });
+        if (reported.some((reading) => reading.breached)) {
+          loteStatus = "COM_OCORRENCIA";
+        }
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        await tx.movimentacao.update({
+          where: { id },
+          data: {
+            status: STATUS.CONFIRMED,
+            confirmado_em: new Date(),
+            tx_hash: result.txHash,
+            status_blockchain: "CONFIRMADA",
+          },
+        });
+
+        await tx.lote.update({
+          where: { id: lot.id },
+          data: {
+            responsavel_atual_id: participantId,
+            status: loteStatus,
+            current_step_index: result.event.stepIndex,
+          },
+        });
+
+        return tx.movimentacao.findUniqueOrThrow({ where: { id }, include });
+      });
+
+      response.json({
+        transfer: toTransfer(updated, participantId),
+      });
+    } catch (error) {
+      // Chain failure after the pre-checks above: the DB row stays in its pre-chain
+      // state (accepted inline-mirror trade-off, documented).
+      chainTransferFailure(response, error);
+    }
   } catch (error) {
     handleError(
       error,
@@ -879,7 +750,7 @@ router.post("/:id/confirmar", autenticar, async (request, response) => {
 // ======================================================
 
 router.post("/:id/ocorrencia", autenticar, async (request, response) => {
-  const parsed = issueSchema.safeParse(request.body);
+  const parsed = reportIssueRequestSchema.safeParse(request.body);
 
   if (!parsed.success) {
     response.status(400).json({

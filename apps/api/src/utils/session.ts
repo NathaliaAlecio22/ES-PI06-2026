@@ -1,9 +1,11 @@
 import type { Response } from "express";
 
+import type { UserRole } from "@provenance/shared";
+
 import { prisma } from "../lib/prisma";
 import type { JwtPayload } from "./jwt";
 
-export type UserRole = "ADMIN" | "OPERATOR" | "VIEWER";
+export type { UserRole };
 
 export function roleFromProfile(profile: string): UserRole {
   if (profile === "ADMINISTRADOR" || profile === "ADMIN") return "ADMIN";

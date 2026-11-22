@@ -33,7 +33,10 @@ model lote {
   status                 String        @default("ATIVO") @db.VarChar(30)
   /// On-chain uint256 batch id (keccak256 of a UUID — same shape as the contract) once
   /// this lot has been seeded on the organization's Workflow contract. Null until then.
-  chain_batch_id         BigInt?       @unique
+  /// Stored as the decimal string of the bigint: a uint256 (up to 78 digits) does not fit
+  /// in Postgres's 64-bit BIGINT (caught by a live end-to-end smoke test — see
+  /// docs/consolidation-followup.md).
+  chain_batch_id         String?       @unique @db.VarChar(80)
   /// Current on-chain step index, mirrored from the CustodyTransferred events.
   current_step_index     Int           @default(0)
   produto                produto       @relation(fields: [produto_id], references: [id], onDelete: NoAction, onUpdate: NoAction)

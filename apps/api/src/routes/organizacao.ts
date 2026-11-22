@@ -3,45 +3,29 @@ import { Prisma } from "@prisma/client";
 import { Router, type Response } from "express";
 import { z } from "zod";
 
+import {
+  acceptInviteRequestSchema,
+  inviteUserRequestSchema,
+  updateUserRequestSchema,
+  updateUserStatusRequestSchema,
+} from "@provenance/shared";
+
 import { prisma } from "../lib/prisma";
-import { getWorkflowForOrganization, getWorkflowSteps } from "../blockchain";
 import { env } from "../config/env";
 import { autenticar } from "../middlewares/auth.middleware";
 import { enviarConviteUsuario } from "../service/email.service";
 import { hashPassword } from "../utils/password.js";
-import { env } from "../config/env";
 import type { JwtPayload } from "../utils/jwt";
 import { loadCurrentUser, roleFromProfile } from "../utils/session";
 
-const userRoles = ["ADMIN", "OPERATOR", "VIEWER"] as const;
 const roleToProfile = {
   ADMIN: "ADMINISTRADOR",
   OPERATOR: "OPERADOR",
   VIEWER: "VISUALIZADOR",
 } as const;
 
-const inviteSchema = z.object({
-  name: z.string().trim().min(2).max(150),
-  email: z.string().trim().email().max(150).transform((email) => email.toLowerCase()),
-  phone: z.string().trim().max(30).nullable().optional(),
-  department: z.string().trim().min(2).max(100),
-  role: z.enum(userRoles),
-});
-
-const updateUserSchema = z.object({
-  name: z.string().trim().min(2).max(150),
-  phone: z.string().trim().max(30).nullable().optional(),
-  department: z.string().trim().min(2).max(100),
-  role: z.enum(userRoles),
-});
-
 const walletSchema = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Informe um endereço de carteira válido."),
-});
-
-const acceptInviteSchema = z.object({
-  token: z.string().min(32).max(256),
-  password: z.string().min(8).max(128),
 });
 
 const router = Router();
@@ -69,25 +53,6 @@ router.patch("/carteira", autenticar, async (request, response) => {
   try {
     const user = await loadAdministrator(request.usuario, response);
     if (!user?.participante_id) return;
-    const currentWallet = user.participante?.wallet_address;
-    if (env.WORKFLOW_FACTORY_ADDRESS && currentWallet) {
-      const workflowAddress = await getWorkflowForOrganization(user.participante_id);
-      if (workflowAddress) {
-        const steps = await getWorkflowSteps(workflowAddress);
-        const currentWalletAssigned = steps.some(
-          (step) => step.assignee.toLowerCase() === currentWallet.toLowerCase(),
-        );
-        if (
-          currentWalletAssigned &&
-          parsed.data.address.toLowerCase() !== currentWallet.toLowerCase()
-        ) {
-          response.status(409).json({
-            message: "A carteira está atribuída a uma cadeia ativa e não pode ser substituída.",
-          });
-          return;
-        }
-      }
-    }
     const participant = await prisma.participante.update({
       where: { id: user.participante_id },
       data: { wallet_address: parsed.data.address },
@@ -126,7 +91,7 @@ async function loadAdministrator(
 }
 
 router.post("/convites/aceitar", async (request, response) => {
-  const parsed = acceptInviteSchema.safeParse(request.body);
+  const parsed = acceptInviteRequestSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({ message: "Informe um convite e senha válidos." });
     return;
@@ -268,7 +233,7 @@ router.get("/usuarios", autenticar, async (request, response) => {
 });
 
 router.post("/usuarios/convites", autenticar, async (request, response) => {
-  const parsed = inviteSchema.safeParse(request.body);
+  const parsed = inviteUserRequestSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({
       message: "Confira as informações do convite.",
@@ -397,7 +362,7 @@ router.delete("/usuarios/convites/:id", autenticar, async (request, response) =>
 });
 
 router.patch("/usuarios/:id", autenticar, async (request, response) => {
-  const parsed = updateUserSchema.safeParse(request.body);
+  const parsed = updateUserRequestSchema.safeParse(request.body);
   const rawId = request.params.id;
   const userId = Array.isArray(rawId) ? rawId[0] : rawId;
   if (!parsed.success || typeof userId !== "string" || !/^\d+$/.test(userId)) {
@@ -468,7 +433,7 @@ router.patch("/usuarios/:id", autenticar, async (request, response) => {
 router.patch("/usuarios/:id/status", autenticar, async (request, response) => {
   const rawId = request.params.id;
   const userId = Array.isArray(rawId) ? rawId[0] : rawId;
-  const parsed = z.object({ active: z.boolean() }).safeParse(request.body);
+  const parsed = updateUserStatusRequestSchema.safeParse(request.body);
   if (!parsed.success || typeof userId !== "string" || !/^\d+$/.test(userId)) {
     response.status(400).json({ message: "Estado ou usuário inválido." });
     return;

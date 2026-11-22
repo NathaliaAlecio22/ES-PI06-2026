@@ -1,3 +1,4 @@
+import type { ProductRow } from "@provenance/shared";
 import type { Product, ProductFormData } from "../components/products/Products.types";
 import { getToken } from "./auth";
 
@@ -8,22 +9,8 @@ export type ProductStatsData = {
   pending: number;
 };
 
-type ApiProduct = {
-  code: string;
-  name: string;
-  lot: string;
-  category: string;
-  manufacturingDate: string;
-  owner: string;
-  location: string;
-  status: Product["status"];
-  quantity: string;
-  unit: string;
-  expirationDate: string;
-  description: string;
-  manufacturer: string;
-  responsible: string;
-};
+/** The wire shape (`ProductRow`) narrowed to the frontend's closed `status` union. */
+type ApiProduct = ProductRow & { status: Product["status"] };
 
 const apiUrl = (import.meta.env.VITE_API_URL ?? "http://localhost:3000/api")
   .replace(/\/$/, "");

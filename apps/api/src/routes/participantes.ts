@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { Router } from "express";
-import { z } from "zod";
+
+import { registerParticipantRequestSchema } from "@provenance/shared";
 
 import { prisma } from "../lib/prisma";
 import { revertReasonOf } from "../blockchain";
@@ -17,78 +18,10 @@ import { NoChainAccountAvailableError } from "../chain/hardhat-accounts";
 import { autenticar } from "../middlewares/auth.middleware";
 import { loadCurrentUser } from "../utils/session";
 
-const participantTypes = [
-  "Fabricante",
-  "Distribuidor",
-  "Transportadora",
-  "Centro de armazenamento",
-  "Varejista",
-] as const;
-
-function isValidCnpj(value: string): boolean {
-  if (value.length !== 14 || /^(\d)\1{13}$/.test(value)) {
-    return false;
-  }
-
-  const calculateDigit = (base: string, weights: number[]): string => {
-    const sum = [...base].reduce(
-      (total, digit, index) => total + Number(digit) * weights[index],
-      0,
-    );
-    const remainder = sum % 11;
-    return String(remainder < 2 ? 0 : 11 - remainder);
-  };
-
-  const firstDigit = calculateDigit(
-    value.slice(0, 12),
-    [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
-  );
-  const secondDigit = calculateDigit(
-    value.slice(0, 12) + firstDigit,
-    [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
-  );
-
-  return value.endsWith(firstDigit + secondDigit);
-}
-
-const registerSchema = z
-  .object({
-    nomeCompleto: z.string().trim().min(2).max(150),
-    email: z.string().trim().email().max(150).transform((email) => email.toLowerCase()),
-    senha: z.string().min(8).max(128),
-    confirmarSenha: z.string(),
-    telefone: z
-      .string()
-      .trim()
-      .max(30)
-      .transform((telefone) => telefone || null),
-    nomeOrganizacao: z.string().trim().min(2).max(150),
-    cnpj: z
-      .string()
-      .trim()
-      .regex(/^[\d./-]+$/, "Informe um CNPJ válido.")
-      .transform((cnpj) => cnpj.replace(/\D/g, ""))
-      .refine(isValidCnpj, "Informe um CNPJ válido."),
-    tipo: z.enum(participantTypes),
-    cargo: z.string().trim().min(2).max(100),
-    aceitouTermos: z.literal(true),
-    /**
-     * Ordered participant types for the custody steps AFTER the organization's own
-     * (step 0 is always the organization itself, holding its own role). Optional:
-     * skipped steps fall back to the documented default chain
-     * (Distribuidor → Transportadora → Varejista).
-     */
-    workflowSteps: z.array(z.enum(participantTypes)).max(3).default([]),
-  })
-  .refine((data) => data.senha === data.confirmarSenha, {
-    path: ["confirmarSenha"],
-    message: "As senhas não conferem.",
-  });
-
 export const participantesRouter = Router();
 
 participantesRouter.post("/cadastro", async (request, response) => {
-  const parsed = registerSchema.safeParse(request.body);
+  const parsed = registerParticipantRequestSchema.safeParse(request.body);
 
   if (!parsed.success) {
     response.status(400).json({

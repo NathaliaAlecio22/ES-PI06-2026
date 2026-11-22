@@ -16,12 +16,13 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { PARTICIPANT_TYPES, type ParticipantType } from "@provenance/shared";
 import {
   cadastrarParticipante,
   type CadastroParticipante,
 } from "../../services/participantes";
 
-
+const WORKFLOW_STEP_COUNT = 3;
 
 function AuthBrand({ darkText = false }: { darkText?: boolean }) {
   return (
@@ -90,9 +91,13 @@ export default function Cadastro() {
       telefone: String(formData.get("telefone") ?? ""),
       nomeOrganizacao: String(formData.get("nomeOrganizacao") ?? ""),
       cnpj: String(formData.get("cnpj") ?? ""),
-      tipo: String(formData.get("tipo") ?? ""),
+      tipo: String(formData.get("tipo") ?? "") as ParticipantType,
       cargo: String(formData.get("cargo") ?? ""),
-      aceitouTermos: accepted,
+      aceitouTermos: true,
+      workflowSteps: Array.from(
+        { length: WORKFLOW_STEP_COUNT },
+        (_, index) => String(formData.get(`workflowStep${index + 1}`) ?? ""),
+      ).filter(Boolean) as ParticipantType[],
     };
 
     if (cadastro.senha !== cadastro.confirmarSenha) {
@@ -309,17 +314,49 @@ export default function Cadastro() {
                       <div className="relative flex h-[46px] items-center rounded-[9px] border border-[#d7dce3] px-[13px] focus-within:border-[#315cf5]">
                         <select name="tipo" required defaultValue="" className="w-full appearance-none bg-transparent pr-7 text-[13px] font-normal text-[#111827] outline-none">
                           <option value="" disabled>Selecione o tipo</option>
-                          <option>Fabricante</option>
-                          <option>Distribuidor</option>
-                          <option>Transportadora</option>
-                          <option>Centro de armazenamento</option>
-                          <option>Varejista</option>
+                          {PARTICIPANT_TYPES.map((type) => (
+                            <option key={type}>{type}</option>
+                          ))}
                         </select>
                         <ChevronDown size={16} className="pointer-events-none absolute right-[13px]" />
                       </div>
                     </label>
 
                     <AuthField name="cargo" label="Cargo ou função" placeholder="Ex.: Gerente de operações" required />
+                  </div>
+                </fieldset>
+
+                {/* CADEIA DE CUSTÓDIA */}
+                <fieldset className="m-0 min-w-0 border-0 border-t border-[#edf0f3] pt-[19px]">
+                  <legend className="mb-[15px] flex w-full items-center gap-[9px] text-[12px] font-bold text-[#263044]">
+                    <span className="grid size-[22px] place-items-center rounded-full bg-[#eef2ff] text-[10px] text-[#315cf5]">3</span>
+                    Cadeia de custódia (opcional)
+                  </legend>
+
+                  <p className="mb-[13px] text-[12px] leading-[1.6] text-[#64748b]">
+                    Defina as próximas etapas do seu workflow após sua organização. Deixe em
+                    branco para usar a cadeia padrão (Distribuidor → Transportadora → Varejista).
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-4 max-[620px]:grid-cols-1">
+                    {Array.from({ length: WORKFLOW_STEP_COUNT }, (_, index) => (
+                      <label key={index} className="flex flex-col gap-2 text-[12px] font-semibold text-[#344054]">
+                        {`Etapa ${index + 2}`}
+                        <div className="relative flex h-[46px] items-center rounded-[9px] border border-[#d7dce3] px-[13px] focus-within:border-[#315cf5]">
+                          <select
+                            name={`workflowStep${index + 1}`}
+                            defaultValue=""
+                            className="w-full appearance-none bg-transparent pr-7 text-[13px] font-normal text-[#111827] outline-none"
+                          >
+                            <option value="">Usar padrão</option>
+                            {PARTICIPANT_TYPES.map((type) => (
+                              <option key={type}>{type}</option>
+                            ))}
+                          </select>
+                          <ChevronDown size={16} className="pointer-events-none absolute right-[13px]" />
+                        </div>
+                      </label>
+                    ))}
                   </div>
                 </fieldset>
 

@@ -355,24 +355,33 @@ export async function reportConditions(params: {
     },
   ];
 
+  // The contract flags the WHOLE batch (not per-channel) on the first breach and then
+  // rejects any further `reportCondition` for it ("batch is compromised"). So once one
+  // channel in this call breaches, later channels are mirrored (for the Postgres record)
+  // without attempting another on-chain call that would only revert.
+  let compromised = false;
   for (const channel of channels) {
     if (channel.value == null) continue;
-    await reportCondition(
-      params.workflowAddress,
-      {
-        batchId: params.batchId,
-        conditionKey: channel.key,
-        value: toFixedPoint(channel.value),
-        threshold: toFixedPoint(channel.threshold),
-        timestamp,
-      },
-      params.signerKey,
-    );
+    const breached = channel.value > channel.threshold;
+    if (!compromised) {
+      await reportCondition(
+        params.workflowAddress,
+        {
+          batchId: params.batchId,
+          conditionKey: channel.key,
+          value: toFixedPoint(channel.value),
+          threshold: toFixedPoint(channel.threshold),
+          timestamp,
+        },
+        params.signerKey,
+      );
+      if (breached) compromised = true;
+    }
     reported.push({
       channel: channel.channel,
       value: channel.value,
       threshold: channel.threshold,
-      breached: channel.value > channel.threshold,
+      breached,
     });
   }
   return reported;

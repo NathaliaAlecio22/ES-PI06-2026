@@ -49,8 +49,8 @@ function workflowPayload() {
     name: "Cadeia de custódia",
     adminAddress: ADMIN_ADDRESS,
     steps: [
-      { name: "Origem", requiredRole: "manufacturer", assignee: PRODUCER_ADDRESS, specification: "Dados de origem e fabricação" },
-      { name: "Transporte", requiredRole: "carrier", assignee: CARRIER_ADDRESS, specification: "Dados de transporte e conservação" },
+      { name: "Origem", requiredRole: "manufacturer", specificationHash: SPECIFICATION_HASH },
+      { name: "Transporte", requiredRole: "carrier", specificationHash: DELIVERABLE_HASH },
     ],
   };
 }
@@ -73,13 +73,12 @@ function transferPayload(overrides: Record<string, unknown> = {}) {
 function seedStore(status: "ACTIVE" | "COMPROMISED" = "ACTIVE"): void {
   workflows.set(WORKFLOW_ID, {
     id: WORKFLOW_ID,
-    organizationId: WORKFLOW_ID,
     name: "Cadeia de custódia",
     adminAddress: ADMIN_ADDRESS,
     workflowAddress: PRODUCER_ADDRESS,
     steps: [
-      { name: "Origem", requiredRole: "manufacturer", assignee: PRODUCER_ADDRESS, specificationHash: SPECIFICATION_HASH },
-      { name: "Transporte", requiredRole: "carrier", assignee: CARRIER_ADDRESS, specificationHash: DELIVERABLE_HASH },
+      { name: "Origem", requiredRole: "manufacturer", specificationHash: SPECIFICATION_HASH },
+      { name: "Transporte", requiredRole: "carrier", specificationHash: DELIVERABLE_HASH },
     ],
     participants: [],
     createdAt: new Date().toISOString(),
@@ -169,18 +168,9 @@ describe("Provenance API (validação local)", () => {
     expect(response.body.details).toHaveLength(1);
   });
 
-  it("rejects empty step specifications before they reach the chain", async () => {
+  it("rejects zero specification hashes before they reach the chain", async () => {
     const payload = workflowPayload();
-    payload.steps[0].specification = " ";
-
-    const response = await request(app).post("/api/workflows").send(payload);
-
-    expect(response.status).toBe(400);
-  });
-
-  it("rejects assigning consecutive stages to the same wallet", async () => {
-    const payload = workflowPayload();
-    payload.steps[1].assignee = PRODUCER_ADDRESS;
+    payload.steps[0].specificationHash = ZERO_HASH;
 
     const response = await request(app).post("/api/workflows").set(authHeader).send(payload);
 

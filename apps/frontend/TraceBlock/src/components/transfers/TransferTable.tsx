@@ -31,6 +31,9 @@ function StorageStatusBadge({
 
     Pendente:
       "bg-slate-50 text-slate-700 border-slate-200",
+
+    "Com ocorrência":
+      "bg-red-50 text-red-700 border-red-200",
   };
 
   const dots: Record<
@@ -40,6 +43,7 @@ function StorageStatusBadge({
     "Em transporte": "bg-blue-500",
     Armazenado: "bg-emerald-500",
     Pendente: "bg-slate-400",
+    "Com ocorrência": "bg-red-500",
   };
 
   return (

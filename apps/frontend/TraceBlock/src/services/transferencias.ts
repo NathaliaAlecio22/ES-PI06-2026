@@ -1,3 +1,4 @@
+import type { TransferListItem } from "@provenance/shared";
 import { getToken } from "./auth";
 
 import type {
@@ -12,29 +13,21 @@ const apiUrl = (
   import.meta.env.VITE_API_URL ?? "http://localhost:3000/api"
 ).replace(/\/$/, "");
 
-type ApiTransfer = {
-  id: string;
-  rawId: string;
-  product: string;
-  lot: string;
-  previousOwner: string;
-  newOwner: string;
-  date: string;
-  time: string;
+/** The wire shape (`TransferListItem`) narrowed to the frontend's closed status unions. */
+type ApiTransfer = TransferListItem & {
   status: Transfer["status"];
   storageStatus: Transfer["storageStatus"];
-  hash: string;
-  location: string;
-  quantity: string;
-  temperature?: string;
-  humidity?: string;
-  notes?: string;
-  canRespond: boolean;
 };
 
 function formatDecimal(value?: string): string | undefined {
   if (value == null || value === "") return undefined;
   return value.replace(".", ",");
+}
+
+/** Full tx hashes (0x + 64 hex chars) are shortened for the table; "Pendente" passes through. */
+function formatHash(hash: string): string {
+  if (!/^0x[0-9a-fA-F]{10,}$/.test(hash)) return hash;
+  return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
 }
 
 function mapTransfer(item: ApiTransfer): Transfer {
@@ -43,6 +36,7 @@ function mapTransfer(item: ApiTransfer): Transfer {
 
   return {
     ...item,
+    hash: formatHash(item.hash),
     temperature: temperature ? `${temperature} °C` : undefined,
     humidity: humidity ? `${humidity}%` : undefined,
   };

@@ -1,3 +1,11 @@
+import type {
+  TransferLotOption,
+  TransferParticipantOption,
+  TransferStats,
+} from "@provenance/shared";
+
+export type { TransferLotOption, TransferParticipantOption };
+
 export type TransferStatus =
   | "Confirmada"
   | "Aguardando confirmação"
@@ -6,7 +14,8 @@ export type TransferStatus =
 export type StorageStatus =
   | "Em transporte"
   | "Armazenado"
-  | "Pendente";
+  | "Pendente"
+  | "Com ocorrência";
 
 export interface Transfer {
   id: string;
@@ -44,33 +53,9 @@ export interface NewTransferData {
   notes: string;
 }
 
-export interface TransferLotOption {
-  id: string;
-  code: string;
-  product: string;
-  quantity: string;
-  unit: string;
-  currentOwner: string;
-  location: string;
-  nextDestinationId?: string | null;
-  workflowManaged?: boolean;
-  workflowComplete?: boolean;
-}
-
-export interface TransferParticipantOption {
-  id: string;
-  name: string;
-  type: string | null;
-}
-
 export interface TransferOptions {
   lots: TransferLotOption[];
   participants: TransferParticipantOption[];
 }
 
-export interface TransferStatsData {
-  total: number;
-  pending: number;
-  confirmed: number;
-  withIssue: number;
-}
+export type TransferStatsData = TransferStats;
