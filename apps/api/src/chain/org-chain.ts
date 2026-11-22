@@ -1,11 +1,15 @@
 import { ethers } from "ethers";
 
+import type { Prisma } from "@prisma/client";
 import type { Role, WorkflowStep } from "@provenance/shared";
 
+import { env } from "../config/env";
 import {
   createWorkflow,
   getParticipantRole,
   registerParticipant,
+  reportCondition,
+  revertReasonOf,
 } from "../blockchain";
 import { prisma } from "../lib/prisma";
 import { privateKeyForAddress } from "./hardhat-accounts";
@@ -209,3 +213,170 @@ export async function allocateAccountForNewOrganization(): Promise<{
 export function orgSignerKey(walletAddress: string): string {
   return privateKeyForAddress(walletAddress);
 }
+
+// ---------------------------------------------------------------------------
+// Lazy workflow bootstrap — organizations registered before this consolidation
+// (or through a flow that skipped the setup) get a default workflow on first use.
+// ---------------------------------------------------------------------------
+
+type ParticipanteRow = {
+  id: bigint;
+  nome: string;
+  tipo: string | null;
+  wallet_address: string | null;
+  workflow_address: string | null;
+  workflow_steps: Prisma.JsonValue | null;
+};
+
+/**
+ * Guarantees the organization has an on-chain workflow, deploying the documented
+ * default chain lazily if needed. Returns the workflow address, its steps, and
+ * the organization's signer key. The caller supplies rows fetched with
+ * `participante` included (e.g. through `usuario.participante`).
+ */
+export async function ensureWorkflowForParticipante(
+  participante: ParticipanteRow,
+): Promise<{ workflowAddress: string; steps: WorkflowStep[]; signerKey: string }> {
+  if (!participante.wallet_address) {
+    throw new Error(
+      "A organização não possui identidade on-chain (re-cadastre-a com o fluxo atual " +
+        "para que uma conta de blockchain seja atribuída).",
+    );
+  }
+  const signerKey = privateKeyForAddress(participante.wallet_address);
+
+  const steps = readStoredSteps(participante.workflow_steps);
+  if (participante.workflow_address && steps) {
+    return { workflowAddress: participante.workflow_address, steps, signerKey };
+  }
+
+  // Lazy default deploy for organizations predating the consolidation.
+  if (!participante.tipo) {
+    throw new Error("A organização não possui tipo definido para construir seu workflow.");
+  }
+  const ownRole = chainRoleForTipo(participante.tipo);
+  const built = buildWorkflowSteps({
+    organization: participante.nome,
+    ownRole,
+    subsequentTypes: defaultSubsequentTypes(),
+  });
+  const deployed = await deployWorkflowForOrganization({
+    organization: participante.nome,
+    ownRole,
+    steps: built,
+    adminPrivateKey: signerKey,
+  });
+  await prisma.participante.update({
+    where: { id: participante.id },
+    data: {
+      workflow_address: deployed.workflowAddress,
+      workflow_steps: deployed.steps,
+    },
+  });
+  return { workflowAddress: deployed.workflowAddress, steps: deployed.steps, signerKey };
+}
+
+/** Parses the stored `workflow_steps` JSON back into typed steps. */
+export function readStoredSteps(raw: Prisma.JsonValue | null): WorkflowStep[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const steps: WorkflowStep[] = [];
+  for (const entry of raw) {
+    if (
+      typeof entry === "object" &&
+      entry !== null &&
+      "name" in entry &&
+      "requiredRole" in entry &&
+      "specificationHash" in entry &&
+      typeof (entry as { name: unknown }).name === "string" &&
+      typeof (entry as { requiredRole: unknown }).requiredRole === "string" &&
+      typeof (entry as { specificationHash: unknown }).specificationHash === "string"
+    ) {
+      steps.push(entry as unknown as WorkflowStep);
+    }
+  }
+  return steps.length > 0 ? steps : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Conditions (FR-10/FR-11) — fixed-point ×100 representation on-chain.
+// ---------------------------------------------------------------------------
+
+/** keccak256 identifiers for the two condition channels the PoC tracks. */
+export const TEMPERATURE_CONDITION_KEY = ethers.keccak256(
+  ethers.toUtf8Bytes("temperatura_celsius"),
+);
+export const HUMIDITY_CONDITION_KEY = ethers.keccak256(ethers.toUtf8Bytes("umidade_percent"));
+
+/** Whole-number fixed-point ×100 — the contract's int256 value/threshold shape. */
+export function toFixedPoint(value: number): bigint {
+  return BigInt(Math.round(value * 100));
+}
+
+export type ReportedCondition = {
+  channel: "temperatura_celsius" | "umidade_percent";
+  value: number;
+  threshold: number;
+  breached: boolean;
+};
+
+/**
+ * Reports one temperature/humidity reading pair on-chain (FR-10/FR-11). A reading above
+ * the configured threshold compromises the batch on-chain automatically (Workflow.sol);
+ * the caller mirrors that by flagging the lot. Thresholds come from the environment
+ * (TEMPERATURE_THRESHOLD_C / HUMIDITY_THRESHOLD_PCT).
+ */
+export async function reportConditions(params: {
+  workflowAddress: string;
+  batchId: bigint;
+  signerKey: string;
+  temperature: number | null;
+  humidity: number | null;
+}): Promise<ReportedCondition[]> {
+  const reported: ReportedCondition[] = [];
+  const timestamp = Math.floor(Date.now() / 1000);
+
+  const channels: Array<{
+    key: string;
+    channel: ReportedCondition["channel"];
+    value: number | null;
+    threshold: number;
+  }> = [
+    {
+      key: TEMPERATURE_CONDITION_KEY,
+      channel: "temperatura_celsius",
+      value: params.temperature,
+      threshold: env.TEMPERATURE_THRESHOLD_C,
+    },
+    {
+      key: HUMIDITY_CONDITION_KEY,
+      channel: "umidade_percent",
+      value: params.humidity,
+      threshold: env.HUMIDITY_THRESHOLD_PCT,
+    },
+  ];
+
+  for (const channel of channels) {
+    if (channel.value == null) continue;
+    await reportCondition(
+      params.workflowAddress,
+      {
+        batchId: params.batchId,
+        conditionKey: channel.key,
+        value: toFixedPoint(channel.value),
+        threshold: toFixedPoint(channel.threshold),
+        timestamp,
+      },
+      params.signerKey,
+    );
+    reported.push({
+      channel: channel.channel,
+      value: channel.value,
+      threshold: channel.threshold,
+      breached: channel.value > channel.threshold,
+    });
+  }
+  return reported;
+}
+
+/** Re-exported so route files have one place for chain-error classification. */
+export { revertReasonOf };
