@@ -7,6 +7,8 @@ import {
 import Brand from "./Brand";
 import { navItems, type Page } from "./sidebar.config";
 import { getUsuario } from "../../services/auth";
+import { listarTransferencias } from "../../services/transferencias";
+import { useEffect, useState } from "react";
 
 interface SidebarProps {
   page: Page;
@@ -47,7 +49,7 @@ export default function Sidebar({
 
         {item.id === "transfers" && (
           <span className="ml-auto rounded-lg bg-white/15 px-1.5 py-0.5 text-[8px] text-[#dfe5ff]">
-            3
+            {transferCount}
           </span>
         )}
       </button>
@@ -63,6 +65,30 @@ export default function Sidebar({
       .map((parte) => parte[0])
       .join("")
       .toUpperCase() ?? "OR";
+
+  const [transferCount, setTransferCount] = useState<number>(0);
+
+  useEffect(() => {
+    let canceled = false;
+
+    async function loadTransfers() {
+      try {
+        const transfers = await listarTransferencias();
+
+        if (!canceled) {
+          setTransferCount(transfers.length)
+        }
+      } catch (error) {
+        console.log("Erro ao carregar quantidade de transferencias:", error);
+      }
+    }
+
+    void loadTransfers();
+
+    return () => {
+      canceled = true;
+    }
+  }, []);
 
   return (
     <>
