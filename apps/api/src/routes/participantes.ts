@@ -4,15 +4,8 @@ import { Router } from "express";
 import { registerParticipantRequestSchema } from "@provenance/shared";
 
 import { prisma } from "../lib/prisma";
-import { revertReasonOf } from "../blockchain";
 import { hashPassword } from "../utils/password";
-import {
-  allocateAccountForNewOrganization,
-  buildWorkflowSteps,
-  chainRoleForTipo,
-  defaultSubsequentTypes,
-  deployWorkflowForOrganization,
-} from "../chain/org-chain";
+import { allocateAccountForNewOrganization } from "../chain/org-chain";
 import { NoChainAccountAvailableError } from "../chain/hardhat-accounts";
 
 import { autenticar } from "../middlewares/auth.middleware";
@@ -43,13 +36,9 @@ participantesRouter.post("/cadastro", async (request, response) => {
     cnpj,
     tipo,
     cargo,
-    workflowSteps,
   } = parsed.data;
 
-  // Pre-check uniqueness before touching the chain: a P2002 after the workflow
-  // deployment would leave an orphaned on-chain contract (chain first, database
-  // second — docs/context.md §3.3; the local chain is resettable, but there is
-  // no reason to spend the deploy on a request that cannot succeed).
+  // Pre-check uniqueness before allocating a chain account.
   const existing = await prisma.participante.findFirst({
     where: { OR: [{ email }, { identificacao: cnpj }] },
     select: { id: true },
@@ -81,35 +70,8 @@ participantesRouter.post("/cadastro", async (request, response) => {
     throw error;
   }
 
-  // The organization's own workflow: step 0 is its own role; the admin chose the
-  // subsequent steps at signup (or the documented defaults apply).
-  const ownRole = chainRoleForTipo(tipo);
-  const steps = buildWorkflowSteps({
-    organization: nomeOrganizacao,
-    ownRole,
-    subsequentTypes: workflowSteps.length > 0 ? workflowSteps : defaultSubsequentTypes(),
-  });
-
-  let deployed: Awaited<ReturnType<typeof deployWorkflowForOrganization>>;
-  try {
-    deployed = await deployWorkflowForOrganization({
-      organization: nomeOrganizacao,
-      ownRole,
-      steps,
-      adminPrivateKey: account.privateKey,
-    });
-  } catch (error) {
-    const revertReason = revertReasonOf(error);
-    const detail = revertReason ?? (error instanceof Error ? error.message : String(error));
-    response.status(502).json({
-      message:
-        "Não foi possível registrar a organização na blockchain. Verifique se o nó local " +
-        "está ativo e o WorkflowFactory implantado (contracts/README.md).",
-      detail,
-    });
-    return;
-  }
-
+  // No workflow is deployed at signup: the organization's single custody chain is
+  // created later, from the "Cadeia de custódia" tab (docs/TOFIX.md).
   try {
     const senhaHash = await hashPassword(senha);
     const result = await prisma.$transaction(async (transaction) => {
@@ -121,8 +83,6 @@ participantesRouter.post("/cadastro", async (request, response) => {
           tipo,
           ativo: true,
           wallet_address: account.address,
-          workflow_address: deployed.workflowAddress,
-          workflow_steps: deployed.steps,
         },
       });
 
@@ -149,7 +109,6 @@ participantesRouter.post("/cadastro", async (request, response) => {
       data: {
         ...result,
         walletAddress: account.address,
-        workflowAddress: deployed.workflowAddress,
       },
     });
   } catch (error) {
@@ -163,9 +122,6 @@ participantesRouter.post("/cadastro", async (request, response) => {
       return;
     }
 
-    // The workflow stays deployed on the (resettable local) chain while the database
-    // write failed — accepted PoC trade-off; the account slot stays unused until the
-    // local chain resets, because nothing references it in the database.
     console.error("Erro ao cadastrar participante:", error);
     response.status(500).json({
       message: "Não foi possível concluir o cadastro.",

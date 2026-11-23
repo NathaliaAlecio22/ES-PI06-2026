@@ -60,12 +60,6 @@ export const registerParticipantRequestSchema = z
     tipo: participantTypeSchema,
     cargo: z.string().trim().min(2).max(100),
     aceitouTermos: z.literal(true),
-    /**
-     * Ordered participant types for the custody steps AFTER the organization's own (step 0
-     * is always the organization itself, holding its own role). Optional: skipped steps
-     * fall back to the documented default chain (Distribuidor → Transportadora → Varejista).
-     */
-    workflowSteps: z.array(participantTypeSchema).max(3).default([]),
   })
   .refine((data) => data.senha === data.confirmarSenha, {
     path: ["confirmarSenha"],

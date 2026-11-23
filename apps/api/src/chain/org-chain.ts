@@ -49,12 +49,13 @@ const ROLE_STEP_NAME: Record<Role, string> = {
   admin: "Administração",
 };
 
-/** Fallback chain used when an organization skips the workflow setup at signup. */
-const DEFAULT_SUBSEQUENT_TYPES: string[] = [
-  "Distribuidor",
-  "Transportadora",
-  "Varejista",
-];
+/** Thrown when an organization acts on a custody chain it has not created yet. */
+export class OrganizationWithoutChainError extends Error {
+  constructor() {
+    super("Crie a cadeia de custódia da organização antes de cadastrar produtos ou lotes.");
+    this.name = "OrganizationWithoutChainError";
+  }
+}
 
 export function chainRoleForTipo(tipo: string): Role {
   const role = TIPO_TO_ROLE[tipo];
@@ -139,10 +140,6 @@ export function buildWorkflowSteps(params: {
   }));
 }
 
-export function defaultSubsequentTypes(): string[] {
-  return [...DEFAULT_SUBSEQUENT_TYPES];
-}
-
 /**
  * Creates the organization's on-chain workflow and registers the organization itself for
  * step 0's role. Returns the data the caller must persist on the `participante` row.
@@ -215,8 +212,7 @@ export function orgSignerKey(walletAddress: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Lazy workflow bootstrap — organizations registered before this consolidation
-// (or through a flow that skipped the setup) get a default workflow on first use.
+// Workflow lookup — there is no default chain; see OrganizationWithoutChainError.
 // ---------------------------------------------------------------------------
 
 type ParticipanteRow = {
@@ -229,9 +225,8 @@ type ParticipanteRow = {
 };
 
 /**
- * Guarantees the organization has an on-chain workflow, deploying the documented
- * default chain lazily if needed. Returns the workflow address, its steps, and
- * the organization's signer key. The caller supplies rows fetched with
+ * Returns the organization's on-chain workflow address, its steps, and its signer
+ * key; throws OrganizationWithoutChainError if no chain was created yet. The caller supplies rows fetched with
  * `participante` included (e.g. through `usuario.participante`).
  */
 export async function ensureWorkflowForParticipante(
@@ -250,30 +245,8 @@ export async function ensureWorkflowForParticipante(
     return { workflowAddress: participante.workflow_address, steps, signerKey };
   }
 
-  // Lazy default deploy for organizations predating the consolidation.
-  if (!participante.tipo) {
-    throw new Error("A organização não possui tipo definido para construir seu workflow.");
-  }
-  const ownRole = chainRoleForTipo(participante.tipo);
-  const built = buildWorkflowSteps({
-    organization: participante.nome,
-    ownRole,
-    subsequentTypes: defaultSubsequentTypes(),
-  });
-  const deployed = await deployWorkflowForOrganization({
-    organization: participante.nome,
-    ownRole,
-    steps: built,
-    adminPrivateKey: signerKey,
-  });
-  await prisma.participante.update({
-    where: { id: participante.id },
-    data: {
-      workflow_address: deployed.workflowAddress,
-      workflow_steps: deployed.steps,
-    },
-  });
-  return { workflowAddress: deployed.workflowAddress, steps: deployed.steps, signerKey };
+  // No default chain: the organization must create its single custody chain first.
+  throw new OrganizationWithoutChainError();
 }
 
 /** Parses the stored `workflow_steps` JSON back into typed steps. */
