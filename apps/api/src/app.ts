@@ -10,6 +10,7 @@ import {
 
 import { prisma } from "./lib/prisma";
 import condicoesRouter from "./routes/condicoes";
+import custodiaRouter from "./routes/custodia";
 import organizacaoRouter from "./routes/organizacao";
 import relatoriosRouter from "./routes/relatorios";
 import produtosRouter from "./routes/produtos";
@@ -81,6 +82,7 @@ app.use("/api/organizacao", organizacaoRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/transferencias", transferenciasRouter);
 app.use("/api/lotes", condicoesRouter);
+app.use("/api/custodia", custodiaRouter);
 app.use("/api/relatorios", relatoriosRouter);
 
 /**

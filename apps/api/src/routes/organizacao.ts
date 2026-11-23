@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   assignableRoleSchema,
   acceptInviteRequestSchema,
+  createCustodyChainRequestSchema,
   inviteUserRequestSchema,
   type Role,
   type WorkflowStep,
@@ -16,9 +17,9 @@ import {
 
 import { prisma } from "../lib/prisma";
 import { env } from "../config/env";
+import { createWorkflow } from "../blockchain";
 import {
   chainRoleForTipo,
-  deployWorkflowForOrganization,
   ensureParticipantRegistered,
   orgSignerKey,
 } from "../chain/org-chain";
@@ -36,16 +37,6 @@ const roleToProfile = {
 
 const walletSchema = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Informe um endereço de carteira válido."),
-});
-
-const workflowSetupSchema = z.object({
-  name: z.string().trim().min(1).max(150),
-  steps: z.array(z.object({
-    name: z.string().trim().min(1).max(150),
-    requiredRole: assignableRoleSchema,
-    assignee: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-    specification: z.string().trim().min(1).max(5000),
-  })).min(2),
 });
 
 type CustodyWorkflowRecord = {
@@ -138,7 +129,7 @@ router.get("/workflow", autenticar, async (request, response) => {
 });
 
 router.post("/workflow", autenticar, async (request, response) => {
-  const parsed = workflowSetupSchema.safeParse(request.body);
+  const parsed = createCustodyChainRequestSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({
       message: parsed.error.issues[0]?.message ?? "Confira os dados das etapas da cadeia.",
@@ -166,14 +157,13 @@ router.post("/workflow", autenticar, async (request, response) => {
     }
 
     const organizationWallet = user.participante.wallet_address;
-    if (!organizationWallet || !user.participante.tipo) {
+    if (!organizationWallet) {
       response.status(409).json({
-        message: "A organização precisa ter tipo e carteira configurados antes de criar a cadeia.",
+        message: "A organização precisa ter uma carteira configurada antes de criar a cadeia.",
       });
       return;
     }
 
-    const ownRole = chainRoleForTipo(user.participante.tipo);
     const organizations = await prisma.participante.findMany({
       where: { ativo: true, wallet_address: { not: null } },
       select: { id: true, nome: true, tipo: true, wallet_address: true },
@@ -209,27 +199,12 @@ router.post("/workflow", autenticar, async (request, response) => {
       return { ...step, assigneeOrganization: assignee };
     });
 
-    if (
-      stepsWithAssignees[0].assigneeOrganization.id !== user.participante_id ||
-      stepsWithAssignees[0].requiredRole !== ownRole
-    ) {
-      response.status(409).json({
-        message: "A primeira etapa deve pertencer à organização que está criando a cadeia.",
-      });
+    // The organization is the workflow's admin/owner and takes part in the chain only if it
+    // is assigned to a step like any other participant. Each step has its own participant.
+    const assignedAddresses = new Set(stepsWithAssignees.map((step) => step.assignee.toLowerCase()));
+    if (assignedAddresses.size !== stepsWithAssignees.length) {
+      response.status(409).json({ message: "Cada etapa deve ter um participante diferente." });
       return;
-    }
-
-    const assignedRoles = new Map<string, Role>();
-    for (const step of stepsWithAssignees) {
-      const addressKey = step.assignee.toLowerCase();
-      const priorRole = assignedRoles.get(addressKey);
-      if (priorRole && priorRole !== step.requiredRole) {
-        response.status(409).json({
-          message: "Uma mesma carteira não pode receber etapas com papéis diferentes.",
-        });
-        return;
-      }
-      assignedRoles.set(addressKey, step.requiredRole);
     }
 
     const workflowSteps: WorkflowStep[] = stepsWithAssignees.map((step) => ({
@@ -238,12 +213,7 @@ router.post("/workflow", autenticar, async (request, response) => {
       specificationHash: ethers.keccak256(ethers.toUtf8Bytes(step.specification)),
     }));
     const signerKey = orgSignerKey(organizationWallet);
-    const deployed = await deployWorkflowForOrganization({
-      organization: user.participante.nome,
-      ownRole,
-      steps: workflowSteps,
-      adminPrivateKey: signerKey,
-    });
+    const deployed = await createWorkflow(workflowSteps, signerKey);
 
     for (const step of stepsWithAssignees) {
       await ensureParticipantRegistered({

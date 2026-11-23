@@ -18,15 +18,12 @@ import { privateKeyForAddress } from "./hardhat-accounts";
  * Service layer binding organizations (Postgres `participante` rows) to their on-chain
  * identity and workflow. Consolidation decisions live here, in one place:
  *
- * - Each organization gets one of the 10 standard Hardhat accounts as its on-chain
+ * - Each organization gets one of the standard Hardhat accounts 1–19 as its on-chain
  *   identity (see ./hardhat-accounts.ts) — a custodial signer model for the PoC.
- * - Each organization owns one `Workflow` contract, created at signup (or lazily on its
- *   first product). Step 0 is always the organization's own role; the admin picks the
- *   following steps at signup (documented defaults when skipped).
- * - `specificationHash` per step is the keccak256 of a deterministic JSON descriptor —
- *   FR-13 is deliberately minimal for the PoC: steps carry name/role/document-hash only,
- *   and the "deliverable specification" is this generated descriptor, not an uploaded
- *   document. Keep the descriptor shape stable: it is what the hash commits to.
+ * - Each organization owns at most one `Workflow` contract, created explicitly from the
+ *   "Cadeia de custódia" tab (routes/cadeia.ts). The organization is the workflow's admin
+ *   and need not hold a step itself; there is no default chain.
+ * - `specificationHash` per step is the keccak256 of the step's specification text.
  */
 
 /** TraceBlock's participant types (the signup vocabulary) → on-chain roles. */
@@ -36,17 +33,6 @@ const TIPO_TO_ROLE: Record<string, Role> = {
   Transportadora: "carrier",
   "Centro de armazenamento": "distribution_center",
   Varejista: "retailer",
-};
-
-/** Portuguese step names for the workflow builder UI and on-chain readability. */
-const ROLE_STEP_NAME: Record<Role, string> = {
-  none: "—",
-  manufacturer: "Fabricação",
-  distributor: "Distribuição",
-  carrier: "Transporte",
-  distribution_center: "Armazenamento",
-  retailer: "Varejo",
-  admin: "Administração",
 };
 
 /** Thrown when an organization acts on a custody chain it has not created yet. */
@@ -65,32 +51,6 @@ export function chainRoleForTipo(tipo: string): Role {
   return role;
 }
 
-export function stepNameForRole(role: Role): string {
-  return ROLE_STEP_NAME[role];
-}
-
-/**
- * Deterministic keccak256 of a step's deliverable descriptor — the only thing the chain
- * ever sees of the specification (docs/context.md §3.3). Key order matters.
- */
-export function specificationHashForStep(params: {
-  organization: string;
-  index: number;
-  name: string;
-  role: Role;
-}): string {
-  return ethers.keccak256(
-    ethers.toUtf8Bytes(
-      JSON.stringify({
-        organization: params.organization,
-        step: params.index,
-        name: params.name,
-        requiredRole: params.role,
-      }),
-    ),
-  );
-}
-
 /**
  * Same idea for a transfer's deliverable: the chain stores only the hash of the
  * delivery descriptor (lot, quantity, location, conditions, notes).
@@ -106,61 +66,6 @@ export function deliverableHashForTransfer(params: {
   humidity: string | null;
 }): string {
   return ethers.keccak256(ethers.toUtf8Bytes(JSON.stringify(params)));
-}
-
-/**
- * Builds the ordered workflow steps for an organization: step 0 is always the
- * organization's own role (it is the initial custodian of every batch it creates),
- * followed by the admin's chosen participant types (or the documented defaults).
- */
-export function buildWorkflowSteps(params: {
-  organization: string;
-  ownRole: Role;
-  subsequentTypes: string[];
-}): WorkflowStep[] {
-  type AssignableRole = Exclude<Role, "none">;
-  const seen = new Set<AssignableRole>();
-  const roles: AssignableRole[] = [params.ownRole as AssignableRole];
-  for (const tipo of params.subsequentTypes) {
-    const role = chainRoleForTipo(tipo);
-    if (role === params.ownRole || role === "none" || seen.has(role)) continue;
-    seen.add(role);
-    roles.push(role);
-  }
-
-  return roles.map((role, index) => ({
-    name: stepNameForRole(role),
-    requiredRole: role,
-    specificationHash: specificationHashForStep({
-      organization: params.organization,
-      index,
-      name: stepNameForRole(role),
-      role,
-    }),
-  }));
-}
-
-/**
- * Creates the organization's on-chain workflow and registers the organization itself for
- * step 0's role. Returns the data the caller must persist on the `participante` row.
- *
- * Chain first, database second (docs/context.md §3.3): if the chain call fails, nothing
- * is persisted; if the database write fails afterwards, the workflow stays deployed on
- * the (resettable local) chain — an accepted PoC trade-off, noted at the call sites.
- */
-export async function deployWorkflowForOrganization(params: {
-  organization: string;
-  ownRole: Role;
-  steps: WorkflowStep[];
-  adminPrivateKey: string;
-}): Promise<{ workflowAddress: string; steps: WorkflowStep[] }> {
-  const deployed = await createWorkflow(params.steps, params.adminPrivateKey);
-  // The organization is its own admin: register it for step 0's role so it can hold
-  // custody of the batches it creates (createBatch requires the initial custodian to
-  // hold steps[0].requiredRole).
-  const ownAddress = new ethers.Wallet(params.adminPrivateKey).address;
-  await registerParticipant(deployed.workflowAddress, ownAddress, params.ownRole, params.adminPrivateKey);
-  return { workflowAddress: deployed.workflowAddress, steps: params.steps };
 }
 
 /**
@@ -188,8 +93,8 @@ export async function ensureParticipantRegistered(params: {
 }
 
 /**
- * Allocates the next free Hardhat account for a new organization. The pool has 10
- * accounts — the PoC is capped at 10 simultaneously registered organizations.
+ * Allocates the next free Hardhat account for a new organization. The pool is accounts
+ * 1–19 (0 is reserved) — the PoC is capped at 19 simultaneously registered organizations.
  */
 export async function allocateAccountForNewOrganization(): Promise<{
   address: string;

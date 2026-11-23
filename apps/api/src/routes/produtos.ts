@@ -120,12 +120,21 @@ router.get("/", autenticar, async (request, response) => {
     const usuario = await loadCurrentUser(request.usuario, response);
     if (!usuario?.participante_id) return;
 
+    // An organization sees the lots it holds and the lots of products it registered (the
+    // chain's admin may not hold a step, so its lots sit with the step-1 participant).
+    const visibleLots = {
+      OR: [
+        {responsavel_atual_id: usuario.participante_id},
+        {produto: {fabricante_id: usuario.participante_id}},
+      ],
+    };
+
     const products = await prisma.produto.findMany({
-     where: {lote: {some: {responsavel_atual_id: usuario.participante_id}}},
+     where: {lote: {some: visibleLots}},
      include: {
       fabricante: true,
       lote: {
-        where: {responsavel_atual_id: usuario.participante_id},
+        where: visibleLots,
         include: {participante: true, usuario_cadastro: true},
         orderBy: {id: "desc"}
       },
@@ -146,7 +155,12 @@ router.get("/stats", autenticar, async (request, response) => {
     if (!usuario?.participante_id) return;
 
     const lots = await prisma.lote.findMany({
-      where: {responsavel_atual_id: usuario.participante_id},
+      where: {
+        OR: [
+          {responsavel_atual_id: usuario.participante_id},
+          {produto: {fabricante_id: usuario.participante_id}},
+        ],
+      },
       select: {status: true},
     });
 
@@ -225,6 +239,10 @@ router.post("/", autenticar, async (request, response) => {
       return;
     }
 
+    // The batch starts at step 1 of the chain, held by that step's participant (which need
+    // not be the organization itself, the workflow admin who signs the createBatch call).
+    const firstStep = chain.etapas[0];
+
     const input: CreateProductRequest = parsed.data;
     const product = await prisma.$transaction(async (transaction) => {
       const createdProduct = await transaction.produto.create({
@@ -241,7 +259,7 @@ router.post("/", autenticar, async (request, response) => {
         data: {
           produto_id: createdProduct.id,
           codigo: input.lot,
-          responsavel_atual_id: usuario.participante_id,
+          responsavel_atual_id: firstStep.responsavel_id ?? usuario.participante_id,
           responsavel_cadastro_id: usuario.id,
           data_fabricacao: new Date(`${input.manufacturingDate}T00:00:00.000Z`),
           data_validade: input.expirationDate
@@ -261,7 +279,7 @@ router.post("/", autenticar, async (request, response) => {
     // Postgres rows above already exist by this point; an accepted PoC trade-off).
     try {
       const batchId = createId();
-      await createBatch(chain.endereco_contrato, batchId, organizationWallet, signerKey);
+      await createBatch(chain.endereco_contrato, batchId, firstStep.endereco_carteira, signerKey);
       await prisma.lote.update({
         where: { id: product.lot.id },
         data: { chain_batch_id: batchId.toString(), current_step_index: 0 },

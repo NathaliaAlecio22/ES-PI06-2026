@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Plus, ShieldCheck, Trash2, Wallet } from "lucide-react";
 
+import { MAX_CHAIN_STEPS } from "@provenance/shared";
+
 import { getUsuario } from "../../services/auth";
 import {
   buscarOpcoesWorkflow,
@@ -22,7 +24,6 @@ const emptyStage = (): StageDraft => ({
 });
 
 export default function WorkflowSetup() {
-  const [organizationId, setOrganizationId] = useState("");
   const [participants, setParticipants] = useState<WorkflowParticipantOption[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowDefinition | null>(null);
   const [stages, setStages] = useState<StageDraft[]>([emptyStage(), emptyStage()]);
@@ -38,18 +39,8 @@ export default function WorkflowSetup() {
     buscarOpcoesWorkflow()
       .then((result) => {
         if (!active) return;
-        setOrganizationId(result.organizationId);
         setParticipants(result.participants);
         setWorkflow(result.workflow);
-        if (!result.workflow) {
-          setStages((current) => current.map((stage, index) => {
-            if (index !== 0) return stage;
-            const ownParticipant = result.participants.find(
-              (participant) => participant.id === result.organizationId,
-            );
-            return { ...stage, participantId: ownParticipant?.id ?? "" };
-          }));
-        }
       })
       .catch((loadError: unknown) => {
         if (active) {
@@ -72,12 +63,6 @@ export default function WorkflowSetup() {
 
   const handleCreate = async () => {
     setError("");
-    const ownParticipant = participants.find((participant) => participant.id === organizationId);
-    if (!ownParticipant) {
-      setError("Cadastre a carteira da sua organização antes de definir a cadeia.");
-      return;
-    }
-
     setSaving(true);
     try {
       const steps = await Promise.all(stages.map(async (stage) => {
@@ -180,7 +165,7 @@ export default function WorkflowSetup() {
             <div key={index} className="rounded-lg border border-slate-200 p-4">
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-xs font-bold text-slate-700">Etapa {index + 1}</p>
-                {index > 0 && (
+                {stages.length > 2 && (
                   <button
                     type="button"
                     aria-label={`Remover etapa ${index + 1}`}
@@ -205,7 +190,6 @@ export default function WorkflowSetup() {
                   Organização responsável
                   <select
                     value={stage.participantId}
-                    disabled={index === 0}
                     onChange={(event) => updateStage(index, { participantId: event.target.value })}
                     className="mt-1.5 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700 outline-none focus:border-blue-500 disabled:bg-slate-50"
                   >
@@ -234,7 +218,7 @@ export default function WorkflowSetup() {
               </div>
               {index === 0 && (
                 <p className="mt-2 text-[11px] text-slate-400">
-                  A primeira etapa é a origem do lote e fica vinculada à sua organização.
+                  A primeira etapa é a origem do lote: o participante escolhido recebe a custódia inicial de cada novo lote.
                 </p>
               )}
             </div>
@@ -243,7 +227,9 @@ export default function WorkflowSetup() {
           <button
             type="button"
             onClick={() => setStages((current) => [...current, emptyStage()])}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            disabled={stages.length >= MAX_CHAIN_STEPS}
+            title={stages.length >= MAX_CHAIN_STEPS ? `Máximo de ${MAX_CHAIN_STEPS} etapas` : undefined}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus size={15} />
             Adicionar etapa
@@ -257,7 +243,7 @@ export default function WorkflowSetup() {
             {saving ? "Registrando na blockchain..." : "Criar cadeia"}
           </button>
           <p className="text-[11px] text-slate-400">
-            A primeira etapa é sua organização; as demais podem ser atribuídas a qualquer participante com carteira cadastrada. A configuração é imutável.
+            Sua organização administra a cadeia e não precisa participar dela. Cada etapa é atribuída a um participante diferente com carteira cadastrada, até {MAX_CHAIN_STEPS} etapas. A configuração é imutável.
           </p>
         </div>
       ) : (

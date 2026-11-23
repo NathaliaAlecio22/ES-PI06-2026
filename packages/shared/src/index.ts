@@ -3,6 +3,7 @@ export * from "./primitives.js";
 export * from "./domain.js";
 export * from "./api.js";
 export * from "./auth.js";
+export * from "./cadeia.js";
 export * from "./organizacao.js";
 export * from "./participantes.js";
 export * from "./produtos.js";
