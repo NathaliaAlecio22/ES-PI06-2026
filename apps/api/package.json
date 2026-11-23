@@ -13,9 +13,7 @@
     "postinstall": "npm run build --prefix ../../packages/shared",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio",
-    "pretest:custodia": "npm run shared:build",
-    "test:custodia": "tsc -p tsconfig.json --outDir dist-test && node --test dist-test/tests/custodia.fluxo.js"
+    "prisma:studio": "prisma studio"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
