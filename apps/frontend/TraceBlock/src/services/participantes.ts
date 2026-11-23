@@ -1,4 +1,10 @@
 import type { RegisterParticipantRequest } from "@provenance/shared";
+import type {
+  Participant,
+  ParticipantFormData,
+  ParticipantsResponse,
+} from "../components/participantes/participantes.types";
+import { getToken } from "./auth";
 
 export type CadastroParticipante = RegisterParticipantRequest;
 
@@ -39,4 +45,38 @@ export async function cadastrarParticipante(
   }
 
   return result;
+}
+
+async function authenticatedParticipantRequest<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const headers = new Headers(options.headers);
+  headers.set("Content-Type", "application/json");
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(`${apiUrl}/participantes${path}`, {
+    ...options,
+    headers,
+  });
+  const result = await readJson<T & { message?: string }>(response);
+  if (!response.ok) {
+    throw new Error(result.message || "Não foi possível concluir a operação.");
+  }
+  return result;
+}
+
+export function listarOrganizacoesParticipantes(): Promise<ParticipantsResponse> {
+  return authenticatedParticipantRequest<ParticipantsResponse>("/");
+}
+
+export async function convidarOrganizacaoParticipante(
+  input: ParticipantFormData,
+): Promise<Participant> {
+  const result = await authenticatedParticipantRequest<{ participant: Participant }>("/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return result.participant;
 }

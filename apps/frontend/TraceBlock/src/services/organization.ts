@@ -2,7 +2,7 @@ import { getToken } from "./auth";
 import type {
   OrganizationUser,
   OrganizationUserRole,
-} from "../components/organization/organization.types";
+} from "../components/participantes/participantes.types";
 
 export type OrganizationUserStats = {
   total: number;

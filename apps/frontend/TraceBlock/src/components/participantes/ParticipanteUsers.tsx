@@ -9,7 +9,7 @@ import {
 import type {
   OrganizationUser,
   OrganizationUserRole,
-} from "./organization.types";
+} from "./participantes.types";
 
 interface OrganizationUsersProps {
   users: OrganizationUser[];

@@ -1,17 +1,245 @@
+import { createHash, randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { Router } from "express";
+import { z } from "zod";
 
-import { registerParticipantRequestSchema } from "@provenance/shared";
+import {
+  isValidCnpj,
+  participantTypeSchema,
+  registerParticipantRequestSchema,
+} from "@provenance/shared";
 
 import { prisma } from "../lib/prisma";
+import { env } from "../config/env";
 import { hashPassword } from "../utils/password";
 import { allocateAccountForNewOrganization } from "../chain/org-chain";
 import { NoChainAccountAvailableError } from "../chain/hardhat-accounts";
+import { enviarConviteUsuario } from "../service/email.service";
 
 import { autenticar } from "../middlewares/auth.middleware";
-import { loadCurrentUser } from "../utils/session";
+import { loadCurrentUser, roleFromProfile } from "../utils/session";
 
 export const participantesRouter = Router();
+
+const createParticipantInviteSchema = z.object({
+  name: z.string().trim().min(2).max(150),
+  cnpj: z.string()
+    .trim()
+    .regex(/^[\d./-]+$/, "Informe um CNPJ válido.")
+    .transform((cnpj) => cnpj.replace(/\D/g, ""))
+    .refine(isValidCnpj, "Informe um CNPJ válido."),
+  type: participantTypeSchema,
+  person: z.string().trim().min(2).max(150),
+  email: z.string().trim().email().max(150).transform((email) => email.toLowerCase()),
+  phone: z.string().trim().max(30).transform((phone) => phone || null),
+});
+
+function hashInviteToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+participantesRouter.get("/", autenticar, async (request, response) => {
+  try {
+    const user = await loadCurrentUser(request.usuario, response);
+    if (!user) return;
+
+    const now = new Date();
+    const organizations = await prisma.participante.findMany({
+      orderBy: { nome: "asc" },
+      include: {
+        usuario: {
+          where: { ativo: true },
+          orderBy: { id: "asc" },
+          take: 1,
+          select: { nome: true, email: true, telefone: true },
+        },
+        convites: {
+          where: { status: "PENDENTE", expiraEm: { gt: now } },
+          orderBy: { criadoEm: "desc" },
+          take: 1,
+          select: { nome: true, email: true, telefone: true },
+        },
+        produtos_fabricados: {
+          select: { _count: { select: { lote: true } } },
+        },
+      },
+    });
+
+    const participants = organizations.map((organization) => {
+      const activeUser = organization.usuario[0];
+      const pendingInvite = organization.convites[0];
+      const lots = organization.produtos_fabricados.reduce(
+        (total, product) => total + product._count.lote,
+        0,
+      );
+      const status = !organization.ativo
+        ? "INACTIVE"
+        : activeUser
+          ? "ACTIVE"
+          : pendingInvite
+            ? "PENDING"
+            : "INACTIVE";
+
+      return {
+        id: organization.id.toString(),
+        name: organization.nome,
+        cnpj: organization.identificacao ?? "",
+        type: organization.tipo ?? "Não informado",
+        person: activeUser?.nome ?? pendingInvite?.nome ?? "Não informado",
+        email: activeUser?.email ?? pendingInvite?.email ?? organization.email ?? "",
+        phone: activeUser?.telefone ?? pendingInvite?.telefone ?? "",
+        lots,
+        status,
+      };
+    });
+
+    response.json({
+      participants,
+      stats: {
+        total: participants.length,
+        active: participants.filter((participant) => participant.status === "ACTIVE").length,
+        pendingInvitations: participants.filter((participant) => participant.status === "PENDING").length,
+        lots: participants.reduce((total, participant) => total + participant.lots, 0),
+      },
+      permissions: {
+        canManageParticipants: roleFromProfile(user.perfil) === "ADMIN",
+      },
+    });
+  } catch (error) {
+    console.error("Erro ao listar organizações participantes:", error);
+    response.status(500).json({ message: "Não foi possível carregar as organizações participantes." });
+  }
+});
+
+participantesRouter.post("/", autenticar, async (request, response) => {
+  const parsed = createParticipantInviteSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({
+      message: parsed.error.issues[0]?.message ?? "Confira os dados da organização e do responsável.",
+    });
+    return;
+  }
+
+  try {
+    const user = await loadCurrentUser(request.usuario, response);
+    if (!user) return;
+    if (roleFromProfile(user.perfil) !== "ADMIN") {
+      response.status(403).json({ message: "Somente administradores podem cadastrar organizações participantes." });
+      return;
+    }
+
+    const duplicateCnpj = await prisma.participante.findUnique({
+      where: { identificacao: parsed.data.cnpj },
+      select: { id: true },
+    });
+    if (duplicateCnpj) {
+      response.status(409).json({ message: "Já existe uma organização cadastrada com este CNPJ." });
+      return;
+    }
+
+    const now = new Date();
+    const [existingUser, pendingInvitation] = await Promise.all([
+      prisma.usuario.findUnique({ where: { email: parsed.data.email }, select: { id: true } }),
+      prisma.conviteUsuario.findFirst({
+        where: {
+          email: parsed.data.email,
+          status: "PENDENTE",
+          expiraEm: { gt: now },
+        },
+        select: { id: true },
+      }),
+    ]);
+    if (existingUser || pendingInvitation) {
+      response.status(409).json({ message: "Este e-mail já possui uma conta ou um convite pendente." });
+      return;
+    }
+
+    let account: Awaited<ReturnType<typeof allocateAccountForNewOrganization>>;
+    try {
+      account = await allocateAccountForNewOrganization();
+    } catch (error) {
+      if (error instanceof NoChainAccountAvailableError) {
+        response.status(503).json({ message: error.message });
+        return;
+      }
+      throw error;
+    }
+
+    const token = randomBytes(32).toString("base64url");
+    const invitationExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const participant = await prisma.$transaction(async (transaction) => {
+      const createdParticipant = await transaction.participante.create({
+        data: {
+          nome: parsed.data.name,
+          identificacao: parsed.data.cnpj,
+          email: parsed.data.email,
+          tipo: parsed.data.type,
+          ativo: true,
+          wallet_address: account.address,
+        },
+      });
+
+      await transaction.conviteUsuario.create({
+        data: {
+          participanteId: createdParticipant.id,
+          remetenteId: user.id,
+          nome: parsed.data.person,
+          email: parsed.data.email,
+          telefone: parsed.data.phone,
+          cargo: "Administrador da organização",
+          perfil: "ADMINISTRADOR",
+          tokenHash: hashInviteToken(token),
+          expiraEm: invitationExpiry,
+        },
+      });
+
+      return createdParticipant;
+    });
+
+    const inviteLink = `${env.FRONTEND_URL.replace(/\/$/, "")}/aceitar-convite?token=${encodeURIComponent(token)}`;
+    try {
+      await enviarConviteUsuario(
+        parsed.data.email,
+        parsed.data.person,
+        participant.nome,
+        inviteLink,
+      );
+    } catch (error) {
+      console.error("Falha ao enviar convite para a organização participante:", error);
+      try {
+        await prisma.participante.delete({ where: { id: participant.id } });
+      } catch (cleanupError) {
+        console.error("Falha ao remover organização sem convite enviado:", cleanupError);
+      }
+      response.status(502).json({
+        message: "A organização não foi cadastrada porque o e-mail de convite não pôde ser enviado.",
+      });
+      return;
+    }
+
+    response.status(201).json({
+      message: "Organização cadastrada. O responsável receberá um convite para criar a senha.",
+      participant: {
+        id: participant.id.toString(),
+        name: participant.nome,
+        cnpj: participant.identificacao ?? "",
+        type: participant.tipo ?? "Não informado",
+        person: parsed.data.person,
+        email: parsed.data.email,
+        phone: parsed.data.phone ?? "",
+        lots: 0,
+        status: "PENDING",
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      response.status(409).json({ message: "Já existe uma organização com esse CNPJ ou um usuário com esse e-mail." });
+      return;
+    }
+    console.error("Erro ao cadastrar organização participante:", error);
+    response.status(500).json({ message: "Não foi possível cadastrar a organização participante." });
+  }
+});
 
 participantesRouter.post("/cadastro", async (request, response) => {
   const parsed = registerParticipantRequestSchema.safeParse(request.body);
@@ -129,6 +357,17 @@ participantesRouter.post("/cadastro", async (request, response) => {
   }
 });
 
+function roleForParticipantType(type: string | null): string | null {
+  const roles: Record<string, string> = {
+    Fabricante: "manufacturer",
+    Distribuidor: "distributor",
+    Transportadora: "carrier",
+    "Centro de armazenamento": "distribution_center",
+    Varejista: "retailer",
+  };
+  return type ? roles[type] ?? null : null;
+}
+
 participantesRouter.get("/destinos", autenticar, async (request, response) => {
   try {
     const user = await loadCurrentUser(request.usuario, response);
@@ -140,44 +379,6 @@ participantesRouter.get("/destinos", autenticar, async (request, response) => {
       orderBy: { nome: "asc" },
     });
 
-    participantesRouter.get("/cadeia-opcoes", autenticar, async (request, response) => {
-      try {
-        const user = await loadCurrentUser(request.usuario, response);
-        if (!user?.participante_id) return;
-
-        const participants = await prisma.participante.findMany({
-          where: { ativo: true, wallet_address: { not: null } },
-          select: { id: true, nome: true, tipo: true, wallet_address: true },
-          orderBy: { nome: "asc" },
-        });
-
-        response.json({
-          organizationId: user.participante_id.toString(),
-          participants: participants.map((participant) => ({
-            id: participant.id.toString(),
-            name: participant.nome,
-            type: participant.tipo ?? "",
-            address: participant.wallet_address,
-            role: roleForParticipantType(participant.tipo),
-          })).filter((participant) => participant.role !== null),
-        });
-      } catch (error) {
-        console.error("Erro ao listar participantes para a cadeia:", error);
-        response.status(500).json({ message: "Não foi possível carregar os participantes da cadeia." });
-      }
-    });
-
-    function roleForParticipantType(type: string | null): string | null {
-      const roles: Record<string, string> = {
-        Fabricante: "manufacturer",
-        Distribuidor: "distributor",
-        Transportadora: "carrier",
-        "Centro de armazenamento": "distribution_center",
-        Varejista: "retailer",
-      };
-      return type ? roles[type] ?? null : null;
-    }
-
     response.json({
       participants: participants.map((p) => ({
         id: p.id.toString(),
@@ -188,5 +389,32 @@ participantesRouter.get("/destinos", autenticar, async (request, response) => {
   } catch (error) {
     console.error("Erro ao listar destinos:", error);
     response.status(500).json({ message: "Não foi possível carregar os destinos." });
+  }
+});
+
+participantesRouter.get("/cadeia-opcoes", autenticar, async (request, response) => {
+  try {
+    const user = await loadCurrentUser(request.usuario, response);
+    if (!user?.participante_id) return;
+
+    const participants = await prisma.participante.findMany({
+      where: { ativo: true, wallet_address: { not: null } },
+      select: { id: true, nome: true, tipo: true, wallet_address: true },
+      orderBy: { nome: "asc" },
+    });
+
+    response.json({
+      organizationId: user.participante_id.toString(),
+      participants: participants.map((participant) => ({
+        id: participant.id.toString(),
+        name: participant.nome,
+        type: participant.tipo ?? "",
+        address: participant.wallet_address,
+        role: roleForParticipantType(participant.tipo),
+      })).filter((participant) => participant.role !== null),
+    });
+  } catch (error) {
+    console.error("Erro ao listar participantes para a cadeia:", error);
+    response.status(500).json({ message: "Não foi possível carregar os participantes da cadeia." });
   }
 });
