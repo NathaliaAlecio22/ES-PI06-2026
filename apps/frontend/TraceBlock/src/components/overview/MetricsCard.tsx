@@ -4,7 +4,6 @@ import {
   Warehouse,
   ArrowLeftRight,
   Clock3,
-  ShieldAlert,
   type LucideIcon,
 } from "lucide-react";
 
@@ -91,18 +90,11 @@ export default function MetricsCard({
       icon: Clock3,
       iconColor: "text-orange-600",
       iconBg: "bg-orange-50",
-    },
-    {
-      title: "Registros inválidos",
-      value: "02",
-      icon: ShieldAlert,
-      iconColor: "text-red-600",
-      iconBg: "bg-red-50",
-    },
+    }
   ];
 
   return (
-    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
       {metrics.map((metric) => (
         <MetricCard key={metric.title} metric={metric} />
       ))}
