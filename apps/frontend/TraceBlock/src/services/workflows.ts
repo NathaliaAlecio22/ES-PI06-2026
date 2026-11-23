@@ -44,14 +44,14 @@ export type WorkflowOptions = {
 };
 
 export function buscarOpcoesWorkflow(): Promise<WorkflowOptions> {
-  return apiRequest<WorkflowOptions>("/workflows/opcoes");
+  return apiRequest<WorkflowOptions>("/organizacao/workflow");
 }
 
 export function criarWorkflow(input: {
   name: string;
   steps: WorkflowStepRequest[];
 }): Promise<WorkflowDefinition> {
-  return apiRequest<WorkflowDefinition>("/workflows", {
+  return apiRequest<WorkflowDefinition>("/organizacao/workflow", {
     method: "POST",
     body: JSON.stringify(input),
   });

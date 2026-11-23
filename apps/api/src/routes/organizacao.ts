@@ -1,17 +1,27 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Prisma } from "@prisma/client";
+import { ethers } from "ethers";
 import { Router, type Response } from "express";
 import { z } from "zod";
 
 import {
+  assignableRoleSchema,
   acceptInviteRequestSchema,
   inviteUserRequestSchema,
+  type Role,
+  type WorkflowStep,
   updateUserRequestSchema,
   updateUserStatusRequestSchema,
 } from "@provenance/shared";
 
 import { prisma } from "../lib/prisma";
 import { env } from "../config/env";
+import {
+  chainRoleForTipo,
+  deployWorkflowForOrganization,
+  ensureParticipantRegistered,
+  orgSignerKey,
+} from "../chain/org-chain";
 import { autenticar } from "../middlewares/auth.middleware";
 import { enviarConviteUsuario } from "../service/email.service";
 import { hashPassword } from "../utils/password.js";
@@ -28,7 +38,278 @@ const walletSchema = z.object({
   address: z.string().regex(/^0x[a-fA-F0-9]{40}$/, "Informe um endereço de carteira válido."),
 });
 
+const workflowSetupSchema = z.object({
+  name: z.string().trim().min(1).max(150),
+  steps: z.array(z.object({
+    name: z.string().trim().min(1).max(150),
+    requiredRole: assignableRoleSchema,
+    assignee: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+    specification: z.string().trim().min(1).max(5000),
+  })).min(2),
+});
+
+type CustodyWorkflowRecord = {
+  id: bigint;
+  organizacao_id: bigint;
+  nome: string;
+  endereco_admin: string;
+  endereco_contrato: string;
+  data_criacao: Date;
+  etapas: Array<{
+    nome: string;
+    papel: string;
+    endereco_carteira: string;
+    hash_especificacao: string;
+    ordem: number;
+  }>;
+};
+
+function toWorkflowDefinition(chain: CustodyWorkflowRecord) {
+  const steps = chain.etapas.map((step) => ({
+    name: step.nome,
+    requiredRole: assignableRoleSchema.parse(step.papel),
+    assignee: step.endereco_carteira,
+    specificationHash: step.hash_especificacao,
+  }));
+  const participantsByAddress = new Map<string, { address: string; role: Role }>();
+  for (const step of steps) {
+    participantsByAddress.set(step.assignee.toLowerCase(), {
+      address: step.assignee,
+      role: step.requiredRole,
+    });
+  }
+
+  return {
+    id: chain.id.toString(),
+    organizationId: chain.organizacao_id.toString(),
+    name: chain.nome,
+    adminAddress: chain.endereco_admin,
+    workflowAddress: chain.endereco_contrato,
+    steps,
+    participants: [...participantsByAddress.values()],
+    createdAt: chain.data_criacao.toISOString(),
+  };
+}
+
 const router = Router();
+
+router.get("/workflow", autenticar, async (request, response) => {
+  try {
+    const user = await loadCurrentUser(request.usuario, response);
+    if (!user?.participante_id) return;
+
+    const [chain, organizations] = await Promise.all([
+      prisma.cadeia_custodia.findUnique({
+        where: { organizacao_id: user.participante_id },
+        include: { etapas: { orderBy: { ordem: "asc" } } },
+      }),
+      prisma.participante.findMany({
+        where: { ativo: true },
+        select: { id: true, nome: true, tipo: true, wallet_address: true },
+        orderBy: { nome: "asc" },
+      }),
+    ]);
+
+    const participants = organizations.flatMap((organization) => {
+      if (!organization.tipo) return [];
+      try {
+        const role = chainRoleForTipo(organization.tipo);
+        if (role === "admin" || role === "none") return [];
+        return [{
+          id: organization.id.toString(),
+          name: organization.nome,
+          address: organization.wallet_address,
+          role,
+        }];
+      } catch {
+        return [];
+      }
+    });
+
+    response.json({
+      organizationId: user.participante_id.toString(),
+      workflow: chain ? toWorkflowDefinition(chain) : null,
+      participants,
+    });
+  } catch (error) {
+    console.error("Erro ao carregar configuração da cadeia de custódia:", error);
+    response.status(500).json({ message: "Não foi possível carregar a configuração da cadeia." });
+  }
+});
+
+router.post("/workflow", autenticar, async (request, response) => {
+  const parsed = workflowSetupSchema.safeParse(request.body);
+  if (!parsed.success) {
+    response.status(400).json({
+      message: parsed.error.issues[0]?.message ?? "Confira os dados das etapas da cadeia.",
+    });
+    return;
+  }
+
+  try {
+    const user = await loadCurrentUser(request.usuario, response);
+    if (!user?.participante_id || !user.participante) return;
+    if (roleFromProfile(user.perfil) !== "ADMIN") {
+      response.status(403).json({
+        message: "Somente um administrador pode definir a cadeia de custódia.",
+      });
+      return;
+    }
+
+    const existing = await prisma.cadeia_custodia.findUnique({
+      where: { organizacao_id: user.participante_id },
+      select: { id: true },
+    });
+    if (existing) {
+      response.status(409).json({ message: "A cadeia de custódia desta organização já foi configurada." });
+      return;
+    }
+
+    const organizationWallet = user.participante.wallet_address;
+    if (!organizationWallet || !user.participante.tipo) {
+      response.status(409).json({
+        message: "A organização precisa ter tipo e carteira configurados antes de criar a cadeia.",
+      });
+      return;
+    }
+
+    const ownRole = chainRoleForTipo(user.participante.tipo);
+    const organizations = await prisma.participante.findMany({
+      where: { ativo: true, wallet_address: { not: null } },
+      select: { id: true, nome: true, tipo: true, wallet_address: true },
+    });
+    const organizationsByAddress = new Map<string, {
+      id: bigint;
+      name: string;
+      address: string;
+      role: Role;
+    }>();
+    for (const organization of organizations) {
+      if (!organization.tipo || !organization.wallet_address) continue;
+      try {
+        const role = chainRoleForTipo(organization.tipo);
+        if (role !== "admin" && role !== "none") {
+          organizationsByAddress.set(organization.wallet_address.toLowerCase(), {
+            id: organization.id,
+            name: organization.nome,
+            address: organization.wallet_address,
+            role,
+          });
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    const stepsWithAssignees = parsed.data.steps.map((step) => {
+      const assignee = organizationsByAddress.get(step.assignee.toLowerCase());
+      if (!assignee || assignee.role !== step.requiredRole) {
+        throw new Error(`A carteira atribuída à etapa "${step.name}" não pertence a um participante ativo com o papel exigido.`);
+      }
+      return { ...step, assigneeOrganization: assignee };
+    });
+
+    if (
+      stepsWithAssignees[0].assigneeOrganization.id !== user.participante_id ||
+      stepsWithAssignees[0].requiredRole !== ownRole
+    ) {
+      response.status(409).json({
+        message: "A primeira etapa deve pertencer à organização que está criando a cadeia.",
+      });
+      return;
+    }
+
+    const assignedRoles = new Map<string, Role>();
+    for (const step of stepsWithAssignees) {
+      const addressKey = step.assignee.toLowerCase();
+      const priorRole = assignedRoles.get(addressKey);
+      if (priorRole && priorRole !== step.requiredRole) {
+        response.status(409).json({
+          message: "Uma mesma carteira não pode receber etapas com papéis diferentes.",
+        });
+        return;
+      }
+      assignedRoles.set(addressKey, step.requiredRole);
+    }
+
+    const workflowSteps: WorkflowStep[] = stepsWithAssignees.map((step) => ({
+      name: step.name,
+      requiredRole: step.requiredRole,
+      specificationHash: ethers.keccak256(ethers.toUtf8Bytes(step.specification)),
+    }));
+    const signerKey = orgSignerKey(organizationWallet);
+    const deployed = await deployWorkflowForOrganization({
+      organization: user.participante.nome,
+      ownRole,
+      steps: workflowSteps,
+      adminPrivateKey: signerKey,
+    });
+
+    for (const step of stepsWithAssignees) {
+      await ensureParticipantRegistered({
+        workflowAddress: deployed.workflowAddress,
+        participant: step.assigneeOrganization.address,
+        role: step.requiredRole,
+        adminPrivateKey: signerKey,
+      });
+    }
+
+    const workflowStepsJson: Prisma.InputJsonValue = workflowSteps.map((step) => ({
+      name: step.name,
+      requiredRole: step.requiredRole,
+      specificationHash: step.specificationHash,
+    }));
+    const createdChain = await prisma.$transaction(async (transaction) => {
+      const chain = await transaction.cadeia_custodia.create({
+        data: {
+          organizacao_id: user.participante_id!,
+          nome: parsed.data.name,
+          endereco_admin: organizationWallet,
+          endereco_contrato: deployed.workflowAddress,
+        },
+      });
+
+      await transaction.etapa_cadeia_custodia.createMany({
+        data: stepsWithAssignees.map((step, index) => ({
+          cadeia_id: chain.id,
+          ordem: index,
+          nome: step.name,
+          papel: step.requiredRole,
+          responsavel_id: step.assigneeOrganization.id,
+          endereco_carteira: step.assigneeOrganization.address,
+          especificacao: step.specification,
+          hash_especificacao: workflowSteps[index].specificationHash,
+        })),
+      });
+
+      await transaction.participante.update({
+        where: { id: user.participante_id! },
+        data: {
+          workflow_address: deployed.workflowAddress,
+          workflow_steps: workflowStepsJson,
+        },
+      });
+
+      return transaction.cadeia_custodia.findUniqueOrThrow({
+        where: { id: chain.id },
+        include: { etapas: { orderBy: { ordem: "asc" } } },
+      });
+    });
+
+    response.status(201).json(toWorkflowDefinition(createdChain));
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("A carteira atribuída à etapa")) {
+      response.status(409).json({ message: error.message });
+      return;
+    }
+    console.error("Erro ao criar a cadeia de custódia:", error);
+    response.status(502).json({
+      message: error instanceof Error
+        ? `Não foi possível criar a cadeia de custódia: ${error.message}`
+        : "Não foi possível criar a cadeia de custódia.",
+    });
+  }
+});
 
 router.get("/carteira", autenticar, async (request, response) => {
   try {

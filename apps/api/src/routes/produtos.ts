@@ -4,13 +4,51 @@ import { Router } from "express";
 import { createProductRequestSchema, type CreateProductRequest } from "@provenance/shared";
 
 import { prisma } from "../lib/prisma";
-import { createBatch, revertReasonOf } from "../blockchain";
-import { ensureWorkflowForParticipante } from "../chain/org-chain";
+import { createBatch, getWorkflowSteps, revertReasonOf } from "../blockchain";
+import { orgSignerKey } from "../chain/org-chain";
 import { autenticar } from "../middlewares/auth.middleware";
 import { createId } from "../store";
 import { loadCurrentUser } from "../utils/session";
 
 const router = Router();
+
+async function findConfiguredCustodyChain(organizationId: bigint) {
+  const chain = await prisma.cadeia_custodia.findUnique({
+    where: { organizacao_id: organizationId },
+    include: { etapas: { orderBy: { ordem: "asc" } } },
+  });
+  if (!chain || chain.etapas.length === 0) return null;
+
+  const onChainSteps = await getWorkflowSteps(chain.endereco_contrato);
+  const matchesPersistedSteps =
+    onChainSteps.length === chain.etapas.length &&
+    chain.etapas.every((step, index) => {
+      const onChainStep = onChainSteps[index];
+      return (
+        step.ordem === index &&
+        onChainStep.name === step.nome &&
+        onChainStep.requiredRole === step.papel &&
+        onChainStep.specificationHash.toLowerCase() === step.hash_especificacao.toLowerCase()
+      );
+    });
+
+  return matchesPersistedSteps ? chain : null;
+}
+
+router.get("/workflow-status", autenticar, async (request, response) => {
+  try {
+    const usuario = await loadCurrentUser(request.usuario, response);
+    if (!usuario?.participante_id) return;
+
+    const chain = await findConfiguredCustodyChain(usuario.participante_id);
+    response.json({ configured: Boolean(chain) });
+  } catch (error) {
+    console.error("Erro ao verificar a cadeia de custódia para cadastro de produto:", error);
+    response.status(503).json({
+      message: "Não foi possível verificar a cadeia de custódia na blockchain.",
+    });
+  }
+});
 
 function statusLabel(status: string): string {
   switch (status.trim().toUpperCase()) {
@@ -150,6 +188,43 @@ router.post("/", autenticar, async (request, response) => {
     const usuario = await loadCurrentUser(request.usuario, response);
     if (!usuario?.participante_id || !usuario.participante) return;
 
+    let chain;
+    try {
+      chain = await findConfiguredCustodyChain(usuario.participante_id);
+    } catch (error) {
+      console.error("Erro ao validar a cadeia de custódia antes do cadastro do produto:", error);
+      response.status(503).json({
+        message: "Não foi possível confirmar a cadeia de custódia na blockchain. Tente novamente quando a rede estiver disponível.",
+      });
+      return;
+    }
+
+    if (!chain) {
+      response.status(409).json({
+        message: "Configure uma cadeia de custódia com etapas e responsáveis antes de cadastrar produtos.",
+      });
+      return;
+    }
+
+    const organizationWallet = usuario.participante.wallet_address;
+    if (!organizationWallet) {
+      response.status(503).json({
+        message: "A organização não possui uma carteira configurada para registrar o lote na blockchain.",
+      });
+      return;
+    }
+
+    let signerKey: string;
+    try {
+      signerKey = orgSignerKey(organizationWallet);
+    } catch (error) {
+      console.error("Não foi possível obter a carteira de assinatura da organização:", error);
+      response.status(503).json({
+        message: "A carteira da organização não está disponível para registrar o lote na blockchain.",
+      });
+      return;
+    }
+
     const input: CreateProductRequest = parsed.data;
     const product = await prisma.$transaction(async (transaction) => {
       const createdProduct = await transaction.produto.create({
@@ -185,9 +260,8 @@ router.post("/", autenticar, async (request, response) => {
     // Seeds the batch on the organization's own Workflow contract (chain second — the
     // Postgres rows above already exist by this point; an accepted PoC trade-off).
     try {
-      const { workflowAddress, signerKey } = await ensureWorkflowForParticipante(usuario.participante);
       const batchId = createId();
-      await createBatch(workflowAddress, batchId, usuario.participante.wallet_address!, signerKey);
+      await createBatch(chain.endereco_contrato, batchId, organizationWallet, signerKey);
       await prisma.lote.update({
         where: { id: product.lot.id },
         data: { chain_batch_id: batchId.toString(), current_step_index: 0 },

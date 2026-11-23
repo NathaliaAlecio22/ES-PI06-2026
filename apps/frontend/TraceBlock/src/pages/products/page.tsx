@@ -11,6 +11,7 @@ import {
   buscarEstatisticasProdutos,
   cadastrarProduto,
   listarProdutos,
+  verificarCadeiaCustodiaProduto,
   type ProductStatsData,
 } from "../../services/produtos";
 import { getUsuario } from "../../services/auth";
@@ -25,6 +26,10 @@ export default function ProductsPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [workflowStatus, setWorkflowStatus] = useState<
+    "checking" | "ready" | "missing" | "error"
+  >("checking");
+  const [workflowError, setWorkflowError] = useState("");
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -62,6 +67,29 @@ export default function ProductsPage() {
     }
 
     void loadProducts();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    verificarCadeiaCustodiaProduto()
+      .then(({ configured }) => {
+        if (active) setWorkflowStatus(configured ? "ready" : "missing");
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setWorkflowStatus("error");
+          setWorkflowError(
+            error instanceof Error
+              ? error.message
+              : "Não foi possível verificar a cadeia de custódia.",
+          );
+        }
+      });
+
     return () => {
       active = false;
     };
@@ -119,13 +147,50 @@ export default function ProductsPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setFormOpen(true)}
-          className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
-        >
-          <Plus size={18} />
-          Cadastrar produto
-        </button>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <button
+            type="button"
+            disabled={workflowStatus !== "ready" || isLoading}
+            onClick={() => {
+              if (workflowStatus === "ready") setFormOpen(true);
+            }}
+            title={workflowStatus === "missing"
+              ? "Crie uma cadeia de custódia antes de cadastrar produtos."
+              : undefined}
+            className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Plus size={18} />
+            Cadastrar produto
+          </button>
+          {workflowStatus === "checking" && (
+            <p role="status" className="text-xs text-slate-500">
+              Verificando cadeia de custódia...
+            </p>
+          )}
+          {workflowStatus === "missing" && (
+            <div className="flex flex-col items-start gap-2 sm:items-end">
+              <p role="alert" className="text-xs text-amber-700">
+                Configure etapas e responsáveis em Cadeia de custódia para liberar o cadastro.
+              </p>
+              {usuario?.perfil?.toUpperCase() !== "ADMINISTRADOR" &&
+                usuario?.perfil?.toUpperCase() !== "ADMIN" && (
+                  <p className="text-xs text-slate-500">
+                    Solicite a um administrador da organização que configure a cadeia.
+                  </p>
+                )}
+            </div>
+          )}
+          {workflowStatus === "error" && (
+            <p role="alert" className="max-w-xs text-right text-xs text-red-600">
+              {workflowError}
+            </p>
+          )}
+          {workflowError && workflowStatus === "missing" && (
+            <p role="alert" className="max-w-xs text-right text-xs text-red-600">
+              {workflowError}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Indicadores */}

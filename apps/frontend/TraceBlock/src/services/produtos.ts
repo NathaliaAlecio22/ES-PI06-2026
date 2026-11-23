@@ -74,6 +74,10 @@ export async function buscarEstatisticasProdutos(): Promise<ProductStatsData> {
   return requestJson<ProductStatsData>("/produtos/stats");
 }
 
+export function verificarCadeiaCustodiaProduto(): Promise<{ configured: boolean }> {
+  return requestJson<{ configured: boolean }>("/produtos/workflow-status");
+}
+
 export async function cadastrarProduto(
   form: ProductFormData,
 ): Promise<Product> {
