@@ -42,6 +42,28 @@ while (-not (Test-Port $rpcPort)) {
 }
 Start-Sleep -Seconds 2
 
+# 1b. Optional: Ethernal block explorer (https://app.tryethernal.com). Reads ETHERNAL_API_TOKEN and
+# ETHERNAL_WORKSPACE from apps/api/.env (workspace RPC URL must be http://127.0.0.1:8545).
+# The workspace is reset first because the local chain restarts from block 0 on every run.
+function Get-DotEnvValue($file, $name) {
+    $line = Get-Content $file | Where-Object { $_ -match "^\s*$name\s*=" } | Select-Object -First 1
+    if (-not $line) { return $null }
+    $value = ($line -replace "^\s*$name\s*=\s*", "").Trim().Trim('"').Trim("'")
+    if ($value) { return $value } else { return $null }
+}
+
+$ethernalToken = Get-DotEnvValue $envFile "ETHERNAL_API_TOKEN"
+$ethernalWorkspace = Get-DotEnvValue $envFile "ETHERNAL_WORKSPACE"
+if ($ethernalToken -and $ethernalWorkspace) {
+    $ethernal = "npx --yes ethernal@2.3.2"
+    $cmd = "`$env:ETHERNAL_API_TOKEN = '$ethernalToken'; `$env:ETHERNAL_WORKSPACE = '$ethernalWorkspace'; " +
+        "$ethernal reset '$ethernalWorkspace'; $ethernal listen -w '$ethernalWorkspace'"
+    Write-Host "Starting Ethernal listener..."
+    Start-Service "ethernal" $contracts $cmd
+} else {
+    Write-Host "Ethernal skipped (set ETHERNAL_API_TOKEN and ETHERNAL_WORKSPACE in apps/api/.env to enable)."
+}
+
 # 2. Deploy WorkflowFactory (--reset discards the previous deployment record of the old chain)
 Write-Host "Deploying WorkflowFactory..."
 Push-Location $contracts
