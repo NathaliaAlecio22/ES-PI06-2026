@@ -424,7 +424,11 @@ router.get("/usuarios", autenticar, async (request, response) => {
     const currentUser = await loadCurrentUser(request.usuario, response);
     if (!currentUser?.participante_id) return;
 
-    const [users, invitations] = await Promise.all([
+    const [organization, users, invitations, recentInvitations] = await Promise.all([
+      prisma.participante.findUnique({
+        where: { id: currentUser.participante_id },
+        select: { nome: true, tipo: true },
+      }),
       prisma.usuario.findMany({
         where: { participante_id: currentUser.participante_id },
         orderBy: { id: "desc" },
@@ -436,7 +440,17 @@ router.get("/usuarios", autenticar, async (request, response) => {
         },
         orderBy: { criadoEm: "desc" },
       }),
+      prisma.conviteUsuario.findMany({
+        where: { participanteId: currentUser.participante_id },
+        orderBy: { criadoEm: "desc" },
+        take: 10,
+      }),
     ]);
+
+    if (!organization) {
+      response.status(404).json({ message: "Organização não encontrada." });
+      return;
+    }
 
     const now = new Date();
     const userRows = users.map((user) => ({
@@ -464,7 +478,35 @@ router.get("/usuarios", autenticar, async (request, response) => {
     }));
 
     response.json({
+      organization: {
+        name: organization.nome,
+        type: organization.tipo,
+      },
       users: [...inviteRows, ...userRows],
+      activities: recentInvitations
+        .flatMap((invitation) => {
+          const events = [{
+            id: `invite:${invitation.id}:sent`,
+            user: invitation.nome,
+            action: "Convite enviado",
+            description: `Convite de acesso enviado para ${invitation.email}.`,
+            occurredAt: invitation.criadoEm.toISOString(),
+          }];
+
+          if (invitation.aceitoEm) {
+            events.push({
+              id: `invite:${invitation.id}:accepted`,
+              user: invitation.nome,
+              action: "Convite aceito",
+              description: `${invitation.nome} criou a senha e ativou o acesso.`,
+              occurredAt: invitation.aceitoEm.toISOString(),
+            });
+          }
+
+          return events;
+        })
+        .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+        .slice(0, 10),
       permissions: { canManageUsers: roleFromProfile(currentUser.perfil) === "ADMIN" },
       stats: {
         total: users.length,

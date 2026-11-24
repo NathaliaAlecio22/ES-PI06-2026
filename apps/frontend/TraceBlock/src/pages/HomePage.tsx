@@ -10,7 +10,7 @@ import ReportsPage from "./reports/page";
 import TransfersPage from "./transfer/page";
 import SensorsPage from "./sensor/page";
 import CustodyPage from "./custody/page";
-import AdminPage from "./admin/page";
+import AdminPage from "./admin/OrganizationAdminPage";
 
 
 export function HomePage() {

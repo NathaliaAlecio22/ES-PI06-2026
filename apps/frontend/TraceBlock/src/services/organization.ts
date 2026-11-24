@@ -13,8 +13,21 @@ export type OrganizationUserStats = {
 
 export type OrganizationUsersResult = {
   users: OrganizationUser[];
+  organization: {
+    name: string;
+    type: string | null;
+  };
+  activities: OrganizationActivity[];
   stats: OrganizationUserStats;
   permissions: { canManageUsers: boolean };
+};
+
+export type OrganizationActivity = {
+  id: string;
+  user: string;
+  action: string;
+  description: string;
+  occurredAt: string;
 };
 
 export type OrganizationUserInput = {
