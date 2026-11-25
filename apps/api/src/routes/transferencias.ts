@@ -5,7 +5,6 @@ import { Router, type Response } from "express";
 import {
   createTransferRequestSchema,
   reportIssueRequestSchema,
-  type Role,
 } from "@provenance/shared";
 
 import {
@@ -15,11 +14,8 @@ import {
   transferCustody,
 } from "../blockchain";
 import {
-  chainRoleForTipo,
   deliverableHashForTransfer,
-  ensureParticipantRegistered,
   orgSignerKey,
-  readStoredSteps,
   reportConditions,
 } from "../chain/org-chain";
 import { env } from "../config/env";
@@ -148,6 +144,29 @@ function toTransfer(row: TransferRow, participantId: bigint) {
   };
 }
 
+type Db = Prisma.TransactionClient | typeof prisma;
+
+/**
+ * The step a lot moves into next, read from the single custody chain of the organization
+ * that registered the product (the chain `createBatch` was called on — see produtos.ts).
+ * Every step carries the participant the admin assigned to it at chain creation; a lot
+ * may only be handed to that participant.
+ */
+async function findNextChainStep(
+  db: Db,
+  organizationId: bigint | null,
+  currentStepIndex: number,
+) {
+  if (organizationId == null) return null;
+  return db.etapa_cadeia_custodia.findFirst({
+    where: {
+      ordem: currentStepIndex + 1,
+      cadeia: { organizacao_id: organizationId },
+    },
+    include: { cadeia: true, responsavel: true },
+  });
+}
+
 function paramId(raw: string | string[] | undefined): bigint {
   const value = Array.isArray(raw) ? raw[0] : raw;
 
@@ -170,8 +189,7 @@ router.get("/opcoes", autenticar, async (request, response) => {
 
     const participantId = user.participante_id;
 
-    const [lots, participants] = await Promise.all([
-      prisma.lote.findMany({
+    const lots = await prisma.lote.findMany({
         where: {
           responsavel_atual_id: participantId,
           status: {
@@ -186,41 +204,40 @@ router.get("/opcoes", autenticar, async (request, response) => {
           },
         },
         include: {
-          produto: { include: { fabricante: true } },
+          produto: true,
         },
         orderBy: {
           id: "desc",
         },
-      }),
+      });
 
-      prisma.participante.findMany({
-        where: {
-          ativo: true,
-          id: {
-            not: participantId,
-          },
-        },
-        select: {
-          id: true,
-          nome: true,
-          tipo: true,
-        },
-        orderBy: {
-          nome: "asc",
-        },
-      }),
-    ]);
+    // Each lot's next step lives on the chain of the organization that registered its
+    // product. Only lots whose next step has an active assignee are offered, and each lot
+    // carries that assignee: it is the only valid destination (checked again on creation).
+    const organizationIds = [
+      ...new Set(lots.flatMap((lot) => (lot.produto.fabricante_id != null ? [lot.produto.fabricante_id] : []))),
+    ];
+    const chains = await prisma.cadeia_custodia.findMany({
+      where: { organizacao_id: { in: organizationIds } },
+      include: { etapas: { include: { responsavel: true } } },
+    });
+    const chainByOrganization = new Map(chains.map((chain) => [chain.organizacao_id, chain]));
 
-    // Each lot's next step lives on its manufacturer's workflow (the contract `createBatch`
-    // was called on — see produtos.ts). Only lots with a transferable next step are offered;
-    // the destination list is narrowed to the roles any of those next steps require (the
-    // authoritative role check happens again at transfer-creation time).
-    const neededRoles = new Set<Role>();
+    const destinations = new Map<string, { id: string; name: string; type: string | null }>();
     const availableLots = lots.flatMap((lot) => {
-      const steps = readStoredSteps(lot.produto.fabricante?.workflow_steps ?? null);
-      const nextStep = steps?.[lot.current_step_index + 1];
-      if (!nextStep) return [];
-      neededRoles.add(nextStep.requiredRole);
+      const chain = lot.produto.fabricante_id != null
+        ? chainByOrganization.get(lot.produto.fabricante_id)
+        : undefined;
+      const nextStep = chain?.etapas.find((step) => step.ordem === lot.current_step_index + 1);
+      const assignee = nextStep?.responsavel;
+      if (!nextStep || !assignee || assignee.ativo !== true || assignee.id === participantId) {
+        return [];
+      }
+      destinations.set(assignee.id.toString(), {
+        id: assignee.id.toString(),
+        name: assignee.nome,
+        type: assignee.tipo,
+      });
       return [{
         id: lot.id.toString(),
         code: lot.codigo,
@@ -229,27 +246,15 @@ router.get("/opcoes", autenticar, async (request, response) => {
         unit: lot.unidade_medida ?? "",
         currentOwner: user.participante?.nome ?? "",
         location: lot.localizacao_origem ?? "",
-        nextRole: nextStep.requiredRole,
+        nextRole: nextStep.papel,
+        nextStep: nextStep.nome,
+        nextParticipantId: assignee.id.toString(),
       }];
-    });
-
-    const eligibleParticipants = participants.filter((participant) => {
-      if (!participant.tipo) return false;
-      try {
-        return neededRoles.has(chainRoleForTipo(participant.tipo));
-      } catch {
-        return false;
-      }
     });
 
     response.json({
       lots: availableLots,
-
-      participants: eligibleParticipants.map((participant) => ({
-        id: participant.id.toString(),
-        name: participant.nome,
-        type: participant.tipo,
-      })),
+      participants: [...destinations.values()].sort((a, b) => a.name.localeCompare(b.name)),
     });
   } catch (error) {
     handleError(
@@ -399,7 +404,7 @@ router.post("/", autenticar, async (request, response) => {
           codigo: input.lot,
         },
         include: {
-          produto: { include: { fabricante: true } },
+          produto: true,
         },
       });
 
@@ -425,11 +430,19 @@ router.post("/", autenticar, async (request, response) => {
         throw new HttpError(409, "Este lote ainda não foi registrado na blockchain.");
       }
 
-      const steps = readStoredSteps(lot.produto.fabricante?.workflow_steps ?? null);
-      const nextIndex = lot.current_step_index + 1;
-      const nextStep = steps?.[nextIndex];
+      const nextStep = await findNextChainStep(
+        tx,
+        lot.produto.fabricante_id,
+        lot.current_step_index,
+      );
       if (!nextStep) {
-        throw new HttpError(409, "Este lote já concluiu o workflow.");
+        throw new HttpError(409, "Este lote já concluiu a cadeia de custódia.");
+      }
+      if (nextStep.responsavel_id !== destinationId) {
+        throw new HttpError(
+          409,
+          "O destino não é o responsável pela próxima etapa da cadeia de custódia.",
+        );
       }
 
       const pendingMovement = await tx.movimentacao.findFirst({
@@ -460,22 +473,6 @@ router.post("/", autenticar, async (request, response) => {
         throw new HttpError(
           400,
           "Destino inválido ou inativo.",
-        );
-      }
-
-      let destinationRole: Role;
-      try {
-        destinationRole = chainRoleForTipo(destination.tipo ?? "");
-      } catch {
-        throw new HttpError(
-          409,
-          "O destino não possui um tipo de participante reconhecido pela blockchain.",
-        );
-      }
-      if (destinationRole !== nextStep.requiredRole) {
-        throw new HttpError(
-          409,
-          "O destino não possui o papel exigido pela próxima etapa do workflow.",
         );
       }
 
@@ -574,7 +571,7 @@ router.post("/", autenticar, async (request, response) => {
 // ======================================================
 
 const confirmInclude = {
-  lote: { include: { produto: { include: { fabricante: true } } } },
+  lote: { include: { produto: true } },
   participante_movimentacao_origem_idToparticipante: true,
   participante_movimentacao_destino_idToparticipante: true,
 } satisfies Prisma.movimentacaoInclude;
@@ -616,45 +613,43 @@ router.post("/:id/confirmar", autenticar, async (request, response) => {
     const lot = movement.lote;
     const origin = movement.participante_movimentacao_origem_idToparticipante;
     const destination = movement.participante_movimentacao_destino_idToparticipante;
-    const fabricante = lot.produto.fabricante;
 
     if (!lot.chain_batch_id) {
       response.status(409).json({ message: "Este lote não possui registro on-chain." });
       return;
     }
-    if (
-      !origin?.wallet_address ||
-      !destination.wallet_address ||
-      !fabricante?.workflow_address ||
-      !fabricante.wallet_address
-    ) {
+    if (!origin?.wallet_address || !destination.wallet_address) {
       response.status(502).json({
         message: "Dados on-chain incompletos para esta transferência.",
       });
       return;
     }
 
-    const steps = readStoredSteps(fabricante.workflow_steps);
-    const nextIndex = lot.current_step_index + 1;
-    const nextStep = steps?.[nextIndex];
+    const nextStep = await findNextChainStep(
+      prisma,
+      lot.produto.fabricante_id,
+      lot.current_step_index,
+    );
     if (!nextStep) {
-      response.status(409).json({ message: "Este lote já concluiu o workflow." });
+      response.status(409).json({ message: "Este lote já concluiu a cadeia de custódia." });
+      return;
+    }
+    // The assignee was registered on the contract at chain creation (organizacao.ts), under
+    // the wallet snapshotted in the step; no lazy registration happens here.
+    if (
+      nextStep.responsavel_id !== participantId ||
+      nextStep.endereco_carteira.toLowerCase() !== destination.wallet_address.toLowerCase()
+    ) {
+      response.status(409).json({
+        message: "Sua organização não é a responsável pela próxima etapa da cadeia de custódia.",
+      });
       return;
     }
 
-    const workflowAddress = fabricante.workflow_address;
+    const workflowAddress = nextStep.cadeia.endereco_contrato;
     const originSignerKey = orgSignerKey(origin.wallet_address);
 
     try {
-      // Onboard the destination into the manufacturer's workflow for the next step's
-      // role, if it is not already registered there (first transfer of this type).
-      await ensureParticipantRegistered({
-        workflowAddress,
-        participant: destination.wallet_address,
-        role: nextStep.requiredRole,
-        adminPrivateKey: orgSignerKey(fabricante.wallet_address),
-      });
-
       const deliverableHash = deliverableHashForTransfer({
         lot: lot.codigo,
         product: lot.produto.nome,

@@ -67,6 +67,10 @@ export const transferLotOptionSchema = z.object({
   location: z.string(),
   /** The on-chain role the destination must hold — see `chainRoleForTipo` in org-chain.ts. */
   nextRole: z.string(),
+  /** Name of the chain step the lot moves into. */
+  nextStep: z.string(),
+  /** The participant assigned to that step — the only valid destination for this lot. */
+  nextParticipantId: z.string(),
 });
 
 export type TransferLotOption = z.infer<typeof transferLotOptionSchema>;

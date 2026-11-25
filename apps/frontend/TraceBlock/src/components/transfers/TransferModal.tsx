@@ -59,7 +59,14 @@ export default function NewTransferModal({
     (lot) => lot.code === form.lot,
   );
 
-  const selectedDestination = participants.find(
+  // A lot can only go to the participant assigned to its next chain step.
+  const destinationOptions = selectedLot
+    ? participants.filter(
+        (participant) => participant.id === selectedLot.nextParticipantId,
+      )
+    : [];
+
+  const selectedDestination = destinationOptions.find(
     (participant) => participant.id === form.destinationId,
   );
 
@@ -85,7 +92,7 @@ export default function NewTransferModal({
     }
 
     if (step === 2) {
-      if (!form.destinationId) {
+      if (!selectedDestination) {
         setError(
           "Selecione o participante que receberá o lote.",
         );
@@ -334,7 +341,9 @@ export default function NewTransferModal({
               </h3>
 
               <p className="mb-6 mt-1 text-sm text-slate-500">
-                Escolha um participante ativo para receber a custódia do lote.
+                {selectedLot
+                  ? `Próxima etapa da cadeia: ${selectedLot.nextStep}. Somente o participante responsável por ela pode receber o lote.`
+                  : "Escolha um participante ativo para receber a custódia do lote."}
               </p>
 
               <label
@@ -359,7 +368,7 @@ export default function NewTransferModal({
                   Selecione um participante
                 </option>
 
-                {participants.map((participant) => (
+                {destinationOptions.map((participant) => (
                   <option
                     key={participant.id}
                     value={participant.id}
