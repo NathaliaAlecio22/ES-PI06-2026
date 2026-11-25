@@ -22,6 +22,27 @@ execução, cada entrada é gravada assim que a resposta chega (sobrevive a exec
 quebrem no meio) e já está coberto pelo `.gitignore` da raiz. A instrumentação vive em
 `tests/helpers/api-log.ts` — um wrapper do supertest com a mesma assinatura.
 
+## Seed e teste e2e
+
+`npm run db:seed` apaga todas as tabelas do banco em `DATABASE_URL` e cria sete
+organizações (admin + uma por tipo + um distribuidor reserva), cada uma com um login
+administrador ativo (senha `Traceblock@2026`) e sua conta Hardhat do pool. Nada é
+gravado on-chain: a cadeia, produtos e transferências nascem pela API.
+
+`npm run test:e2e` roda o fluxo principal (seed → bloqueio de produto → cadeia →
+lote → transferências etapa a etapa → linha do tempo) contra um Postgres **local** —
+a suíte recusa qualquer banco que não seja localhost — e um nó Hardhat local:
+
+```bash
+npm run e2e:db                      # uma vez: Postgres no Docker, porta 5433
+cd ../../contracts && npm run node  # em outro terminal, nó recém-iniciado
+npm run deploy:local                # (em contracts/) factory no endereço do .env
+cd ../apps/api && npm run test:e2e  # aplica as migrations e roda a suíte
+```
+
+O banco pode ser trocado com `E2E_DATABASE_URL` (precisa continuar local). O envio de
+e-mails não é testado: o seed substitui o fluxo de convite.
+
 ## Current endpoints
 
 - `GET /api/health`

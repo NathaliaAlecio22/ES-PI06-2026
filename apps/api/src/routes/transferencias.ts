@@ -504,6 +504,7 @@ router.post("/", autenticar, async (request, response) => {
           lote_id: lot.id,
           origem_id: participantId,
           destino_id: destinationId,
+          etapa_cadeia_id: nextStep.id,
           usuario_id: user.id,
           tipo: "TRANSFERENCIA",
           status: STATUS.PENDING,

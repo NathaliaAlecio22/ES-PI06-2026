@@ -10,6 +10,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "vitest run",
+    "test:e2e": "vitest run -c vitest.e2e.config.mts",
+    "e2e:db": "docker run -d --name traceblock-e2e-db -e POSTGRES_PASSWORD=e2e -e POSTGRES_DB=traceblock_e2e -p 5433:5432 postgres:16-alpine",
     "postinstall": "npm run build --prefix ../../packages/shared",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

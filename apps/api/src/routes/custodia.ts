@@ -257,7 +257,9 @@ export function buildConfiguredCustodySteps(
 ): CustodyStepDto[] {
   const movementsByStage = workflow.etapas.map((stage, index) => {
     if (index === 0) return null;
-    return lote.movimentacao.find((movement) =>
+    // Latest attempt wins: a transfer rejected with an occurrence and then retried must
+    // show the retry's state, not the old occurrence (movements come ordered by id asc).
+    return [...lote.movimentacao].reverse().find((movement) =>
       movement.etapa_cadeia_id === stage.id ||
       (stage.responsavel_id != null && movement.destino_id === stage.responsavel_id),
     ) ?? null;
