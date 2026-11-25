@@ -7,7 +7,6 @@ import type {
   TransferOptions,
   TransferStatsData,
 } from "../components/transfers/tranfers.type";
-import { signWalletMessage } from "./wallet";
 
 const apiUrl = (
   import.meta.env.VITE_API_URL ?? "http://localhost:3000/api"
@@ -131,15 +130,8 @@ function parseOptionalDecimal(
 export async function criarTransferencia(
   data: NewTransferData,
 ): Promise<Transfer> {
-  const body: {
-    lot: string;
-    destinationId: string;
-    location: string;
-    temperature?: number;
-    humidity?: number;
-    notes?: string;
-    signature?: string;
-  } = {
+  // The API signs on the origin organization's behalf; no wallet step here.
+  const body = {
     lot: data.lot,
     destinationId: data.destinationId,
     location: data.location.trim(),
@@ -147,25 +139,6 @@ export async function criarTransferencia(
     humidity: parseOptionalDecimal(data.humidity),
     notes: data.notes.trim() || undefined,
   };
-
-  const prepared = await requestJson<{
-    blockchainRequired: boolean;
-    digest?: string;
-    signer?: string;
-  }>("/transferencias/assinatura", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-  if (prepared.blockchainRequired) {
-    if (!prepared.digest || !prepared.signer) {
-      throw new Error("A API não retornou os dados necessários para assinar a transferência.");
-    }
-    const signed = await signWalletMessage(prepared.digest);
-    if (signed.address.toLowerCase() !== prepared.signer.toLowerCase()) {
-      throw new Error("Conecte a carteira atribuída à etapa atual para autorizar esta transferência.");
-    }
-    body.signature = signed.signature;
-  }
 
   const result = await requestJson<{
     transfer: ApiTransfer;
